@@ -3,7 +3,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
 from app.core.database import engine, Base
-from app.models import models
+from app.models import models, workspace  # noqa: F401
 from app.api.v1 import auth, collections
 
 os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
