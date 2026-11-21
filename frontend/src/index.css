@@ -1,0 +1,63 @@
+@import "tailwindcss";
+@import "./styles/tokens.css";
+@custom-variant dark (&:where(.dark, .dark *));
+
+@layer base {
+  html,
+  body {
+    font-family: var(--font-thai);
+    font-size: 15px;
+    line-height: 1.75;
+    background-color: var(--color-page);
+    color: var(--color-ink);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  ::selection {
+    background-color: var(--color-selection);
+    color: var(--color-accent-ink);
+  }
+}
+
+/* คลาสมาตรฐานตามสเปก Textspace */
+.rim-btn-primary {
+  background-color: var(--color-primary);
+  color: var(--color-surface);
+  border-radius: var(--radius-md);
+  padding: 10px 18px;
+  min-height: 50px;
+  font-weight: 650;
+  font-size: 0.91rem;
+  transition: background-color 150ms ease, box-shadow 150ms ease;
+}
+
+.rim-btn-primary:hover:not(:disabled) {
+  background-color: var(--color-accent);
+}
+
+.rim-btn-primary:focus-visible {
+  outline: 3px solid var(--color-focus);
+  outline-offset: 2px;
+}
+
+.rim-input {
+  background-color: var(--color-surface);
+  color: var(--color-ink);
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-md);
+  padding: 10px 13px;
+  height: 48px;
+  font-size: 15px;
+}
+
+.rim-input:focus {
+  outline: none;
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 3px var(--color-accent-soft);
+}
+
+/* ระยะบรรทัด 1.9 สำหรับการอ่านเอกสารและสรุป Wiki ระยะยาว */
+.rim-reading-passage {
+  line-height: 1.9;
+  color: var(--color-ink);
+}

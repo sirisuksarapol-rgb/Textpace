@@ -1,0 +1,57 @@
+:root {
+  /* Brand & Accent */
+  --color-primary: #245852;
+  --color-accent: #326b64;
+  --color-accent-soft: #e0eeea;
+  --color-accent-ink: #173d38;
+
+  /* Neutral Paper Surfaces */
+  --color-page: #f7f9f8;
+  --color-surface: #ffffff;
+  --color-surface-soft: #edf2f0;
+  --color-ink: #202927;
+  --color-ink-soft: #43524e;
+  --color-muted: #576661;
+  --color-line: #d7e0dc;
+
+  /* Semantic & Focus */
+  --color-danger: #a33432;
+  --color-danger-soft: #fff0ef;
+  --color-focus: #1d7168;
+  --color-selection: #cfe5dd;
+
+  /* Elevation (ใช้เฉพาะ Overlay/Modal ตามกฎ One Elevation Rule) */
+  --shadow-lift: 0 10px 26px rgb(23 43 38 / 10%);
+
+  /* Radii & Spacing */
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 24px;
+
+  /* Typography */
+  --font-thai: "Noto Sans Thai", "Leelawadee UI", Tahoma, system-ui, sans-serif;
+}
+
+[data-theme="dark"],
+.dark {
+  --color-primary: #3b8279;
+  --color-accent: #4c9a90;
+  --color-accent-soft: #1b3531;
+  --color-accent-ink: #cbe8e2;
+
+  --color-page: #131817;
+  --color-surface: #19201e;
+  --color-surface-soft: #202927;
+  --color-ink: #e8efed;
+  --color-ink-soft: #b8c7c3;
+  --color-muted: #8a9b96;
+  --color-line: #2c3835;
+
+  --color-danger: #e06c6a;
+  --color-danger-soft: #361c1c;
+  --color-focus: #4c9a90;
+  --color-selection: #244742;
+
+  --shadow-lift: 0 12px 32px rgb(0 0 0 / 28%);
+}

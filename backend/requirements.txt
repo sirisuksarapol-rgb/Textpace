@@ -1,0 +1,19 @@
+fastapi
+uvicorn[standard]
+sqlalchemy
+pydantic-settings
+python-multipart
+email-validator
+
+# Auth & Supabase
+passlib[bcrypt]
+bcrypt>=4.0.1
+python-jose[cryptography]
+PyJWT
+supabase
+google-auth
+
+# RAG, PDF & OpenRouter LLM
+httpx
+chromadb
+pypdf
