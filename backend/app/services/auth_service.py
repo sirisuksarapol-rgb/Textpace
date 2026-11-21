@@ -1,8 +1,8 @@
 from datetime import datetime, timedelta, timezone
-from email.message import EmailMessage
+import os
 import re
 import secrets
-import smtplib
+import httpx
 from google.auth.transport import requests as google_requests
 from google.oauth2 import id_token
 from app.core.config import (
@@ -24,21 +24,44 @@ def create_user_token(user_id: str, email: str, remember_me: bool = True) -> str
 
 
 def _send_html_email(to_email: str, subject: str, plain_text: str, html_body: str) -> bool:
-    if not (settings.SMTP_HOST and settings.SMTP_USER and settings.SMTP_PASSWORD):
+    api_key = (os.getenv("BREVO_API_KEY") or getattr(settings, "BREVO_API_KEY", "") or "").strip()
+    sender_email = (
+        os.getenv("BREVO_SENDER_EMAIL")
+        or getattr(settings, "BREVO_SENDER_EMAIL", "")
+        or getattr(settings, "SMTP_FROM_EMAIL", "")
+        or getattr(settings, "SMTP_USER", "")
+        or ""
+    ).strip()
+
+    if not api_key or not sender_email:
+        print("[BREVO EMAIL SKIPPED] Missing BREVO_API_KEY or sender email")
         return False
 
-    msg = EmailMessage()
-    msg["Subject"] = subject
-    msg["From"] = f"Textspace <{settings.SMTP_FROM_EMAIL or settings.SMTP_USER}>"
-    msg["To"] = to_email
-    msg.set_content(plain_text)
-    msg.add_alternative(html_body, subtype="html")
-
-    with smtplib.SMTP(settings.SMTP_HOST, settings.SMTP_PORT) as server:
-        server.starttls()
-        server.login(settings.SMTP_USER, settings.SMTP_PASSWORD)
-        server.send_message(msg)
-    return True
+    try:
+        response = httpx.post(
+            "https://api.brevo.com/v3/smtp/email",
+            headers={
+                "api-key": api_key,
+                "Content-Type": "application/json",
+                "Accept": "application/json",
+            },
+            json={
+                "sender": {"name": "Textspace", "email": sender_email},
+                "to": [{"email": to_email}],
+                "subject": subject,
+                "textContent": plain_text,
+                "htmlContent": html_body,
+            },
+            timeout=15.0,
+        )
+        response.raise_for_status()
+        return True
+    except httpx.HTTPStatusError as exc:
+        print(f"[BREVO HTTP ERROR] status={exc.response.status_code} body={exc.response.text}")
+        return False
+    except Exception as exc:
+        print(f"[BREVO EMAIL ERROR] to={to_email} error={exc}")
+        return False
 
 
 def generate_and_send_otp(email: str) -> str:
