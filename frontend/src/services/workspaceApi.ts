@@ -46,6 +46,7 @@ interface RawCollection {
   name: string;
   description?: string | null;
   document_count?: number;
+  message_count?: number;
   updated_at?: string;
   created_at?: string;
 }
@@ -221,7 +222,7 @@ function normalizeCitations(rawList?: Record<string, unknown>[] | null): Citatio
   return rawList.map((c) => ({
     fileName: String(c.fileName || c.filename || c.source || 'เอกสารอ้างอิง'),
     page: Number(c.page || c.page_number || 1),
-    excerpt: String(c.excerpt || c.text || c.content || ''),
+    excerpt: String(c.excerpt || c.snippet || c.text || c.content || ''),
   }));
 }
 
@@ -246,7 +247,7 @@ export const workspaceApi = {
       name: c.name,
       description: c.description || '',
       docCount: c.document_count ?? 0,
-      messageCount: 0,
+      messageCount: c.message_count ?? 0,
       updatedAt: formatDateLabel(c.updated_at || c.created_at),
     }));
   },
@@ -301,7 +302,7 @@ export const workspaceApi = {
       name: updated.name,
       description: updated.description || '',
       docCount: updated.document_count ?? 0,
-      messageCount: 0,
+      messageCount: updated.message_count ?? 0,
       updatedAt: formatDateLabel(updated.updated_at || updated.created_at),
     };
   },
@@ -343,7 +344,9 @@ export const workspaceApi = {
     ]);
 
     const rawDocs = await handleResponse<RawDocument[]>(docsRes);
-    const rawMsgs = await handleResponse<RawMessage[]>(msgsRes);
+    const rawMsgs = msgsRes.ok
+      ? ((await msgsRes.json().catch(() => [])) as RawMessage[])
+      : [];
     const wikiData = wikiRes.ok
       ? ((await wikiRes.json().catch(() => ({}))) as RawWikiResponse)
       : {};

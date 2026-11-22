@@ -97,6 +97,7 @@ def list_collections(
     for c in collections:
         item = CollectionResponse.model_validate(c)
         item.document_count = len(c.documents)
+        item.message_count = len(c.messages)
         results.append(item)
     return results
 
@@ -118,6 +119,7 @@ def create_collection(
 
     res = CollectionResponse.model_validate(new_col)
     res.document_count = 0
+    res.message_count = 0
     return res
 
 
@@ -139,6 +141,7 @@ def update_collection(
 
     res = CollectionResponse.model_validate(col)
     res.document_count = len(col.documents)
+    res.message_count = len(col.messages)
     return res
 
 
