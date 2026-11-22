@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from "react";
+import { useState, useRef, useEffect, type FormEvent } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { GoogleLogin, type CredentialResponse } from "@react-oauth/google";
 import {
@@ -33,6 +33,33 @@ export default function SignupPage() {
   const [showPass, setShowPass] = useState(false);
   const [showConfirmPass, setShowConfirmPass] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
+
+  const googleContainerRef = useRef<HTMLDivElement | null>(null);
+  const [googleBtnWidth, setGoogleBtnWidth] = useState<number>(320);
+
+  // ปรับความกว้างปุ่ม Google Signup อัตโนมัติให้พอดีกับการ์ดในทุกขนาดหน้าจอ
+  useEffect(() => {
+    const el = googleContainerRef.current;
+    if (!el) return;
+
+    const updateWidth = () => {
+      const containerWidth = Math.floor(el.getBoundingClientRect().width);
+      if (containerWidth > 0) {
+        setGoogleBtnWidth(Math.min(400, Math.max(200, containerWidth)));
+      }
+    };
+
+    updateWidth();
+
+    if (typeof ResizeObserver !== "undefined") {
+      const observer = new ResizeObserver(updateWidth);
+      observer.observe(el);
+      return () => observer.disconnect();
+    }
+
+    window.addEventListener("resize", updateWidth);
+    return () => window.removeEventListener("resize", updateWidth);
+  }, []);
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
@@ -113,29 +140,29 @@ export default function SignupPage() {
   }[lang];
 
   return (
-    <div className="min-h-screen flex flex-col bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 transition-colors relative overflow-x-hidden">
+    <div className="min-h-screen min-h-dvh flex flex-col bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 transition-colors relative overflow-x-hidden">
       <div
         aria-hidden="true"
         className="pointer-events-none fixed inset-0 bg-[radial-gradient(#cbd5e1_1px,transparent_1px)] dark:bg-[radial-gradient(#1e293b_1px,transparent_1px)] [background-size:20px_20px] opacity-60"
       />
       <div
         aria-hidden="true"
-        className="pointer-events-none fixed top-20 left-1/2 -translate-x-1/2 w-[580px] h-[300px] bg-blue-500/10 dark:bg-blue-500/15 blur-3xl rounded-full"
+        className="pointer-events-none fixed top-20 left-1/2 -translate-x-1/2 w-[90vw] max-w-[580px] h-[220px] sm:h-[300px] bg-blue-500/10 dark:bg-blue-500/15 blur-3xl rounded-full"
       />
 
       <Topbar />
 
-      <main className="relative z-10 flex-1 flex items-center justify-center px-4 py-10 sm:py-12">
+      <main className="relative z-10 flex-1 flex items-center justify-center px-3.5 sm:px-6 py-6 sm:py-10 md:py-14">
         <div className="w-full max-w-[480px]">
-          <div className="bg-white/95 dark:bg-slate-900/95 backdrop-blur-xl rounded-3xl border border-slate-200/90 dark:border-slate-800 shadow-xl shadow-slate-200/60 dark:shadow-black/50 overflow-hidden">
+          <div className="bg-white/95 dark:bg-slate-900/95 backdrop-blur-xl rounded-2xl sm:rounded-3xl border border-slate-200/90 dark:border-slate-800 shadow-xl shadow-slate-200/60 dark:shadow-black/50 overflow-hidden">
             <div className="h-1.5 w-full bg-gradient-to-r from-blue-600 via-indigo-500 to-blue-400" />
 
-            <div className="p-7 sm:p-9 space-y-6">
+            <div className="p-5 sm:p-7 md:p-9 space-y-5 sm:space-y-6">
               <div className="space-y-1">
-                <h1 className="text-2xl sm:text-[26px] font-bold tracking-tight text-slate-900 dark:text-white">
+                <h1 className="text-xl sm:text-2xl md:text-[26px] font-bold tracking-tight text-slate-900 dark:text-white">
                   {t.signupTitle}
                 </h1>
-                <p className="text-sm text-slate-500 dark:text-slate-400">
+                <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 leading-relaxed">
                   {t.signupDesc}
                 </p>
               </div>
@@ -143,10 +170,10 @@ export default function SignupPage() {
               {errorMsg && (
                 <div
                   role="alert"
-                  className="p-3 rounded-xl bg-rose-50 dark:bg-rose-950/50 border border-rose-200 dark:border-rose-800 text-rose-600 dark:text-rose-300 text-xs font-medium flex items-center gap-2"
+                  className="p-3 rounded-xl bg-rose-50 dark:bg-rose-950/50 border border-rose-200 dark:border-rose-800 text-rose-600 dark:text-rose-300 text-xs font-medium flex items-start gap-2"
                 >
-                  <AlertCircle className="w-4 h-4 shrink-0" />
-                  <span>{errorMsg}</span>
+                  <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                  <span className="break-words">{errorMsg}</span>
                 </div>
               )}
 
@@ -159,7 +186,7 @@ export default function SignupPage() {
                     {t.username}
                   </label>
                   <div className="relative group">
-                    <User className="w-4 h-4 text-slate-400 group-focus-within:text-blue-600 dark:group-focus-within:text-blue-400 transition-colors absolute left-3.5 top-1/2 -translate-y-1/2" />
+                    <User className="w-4 h-4 text-slate-400 group-focus-within:text-blue-600 dark:group-focus-within:text-blue-400 transition-colors absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
                     <input
                       id="signup-username"
                       type="text"
@@ -171,12 +198,12 @@ export default function SignupPage() {
                         setForm({ ...form, username: e.target.value })
                       }
                       placeholder="somchai_dev"
-                      className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700/80 bg-slate-50/70 dark:bg-slate-800/50 text-sm text-slate-900 dark:text-white placeholder:text-slate-400 focus:bg-white dark:focus:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/25 focus:border-blue-500 transition-all"
+                      className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700/80 bg-slate-50/70 dark:bg-slate-800/50 text-base sm:text-sm text-slate-900 dark:text-white placeholder:text-slate-400 focus:bg-white dark:focus:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/25 focus:border-blue-500 transition-all"
                     />
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 sm:gap-4">
                   <div className="space-y-1.5">
                     <label
                       htmlFor="signup-firstname"
@@ -194,7 +221,7 @@ export default function SignupPage() {
                         setForm({ ...form, firstName: e.target.value })
                       }
                       placeholder={lang === "th" ? "สมชาย" : "Somchai"}
-                      className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700/80 bg-slate-50/70 dark:bg-slate-800/50 text-sm text-slate-900 dark:text-white placeholder:text-slate-400 focus:bg-white dark:focus:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/25 focus:border-blue-500 transition-all"
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700/80 bg-slate-50/70 dark:bg-slate-800/50 text-base sm:text-sm text-slate-900 dark:text-white placeholder:text-slate-400 focus:bg-white dark:focus:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/25 focus:border-blue-500 transition-all"
                     />
                   </div>
 
@@ -215,7 +242,7 @@ export default function SignupPage() {
                         setForm({ ...form, lastName: e.target.value })
                       }
                       placeholder={lang === "th" ? "ใจดี" : "Jaidee"}
-                      className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700/80 bg-slate-50/70 dark:bg-slate-800/50 text-sm text-slate-900 dark:text-white placeholder:text-slate-400 focus:bg-white dark:focus:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/25 focus:border-blue-500 transition-all"
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700/80 bg-slate-50/70 dark:bg-slate-800/50 text-base sm:text-sm text-slate-900 dark:text-white placeholder:text-slate-400 focus:bg-white dark:focus:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/25 focus:border-blue-500 transition-all"
                     />
                   </div>
                 </div>
@@ -228,7 +255,7 @@ export default function SignupPage() {
                     {t.email}
                   </label>
                   <div className="relative group">
-                    <Mail className="w-4 h-4 text-slate-400 group-focus-within:text-blue-600 dark:group-focus-within:text-blue-400 transition-colors absolute left-3.5 top-1/2 -translate-y-1/2" />
+                    <Mail className="w-4 h-4 text-slate-400 group-focus-within:text-blue-600 dark:group-focus-within:text-blue-400 transition-colors absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
                     <input
                       id="signup-email"
                       type="email"
@@ -239,12 +266,12 @@ export default function SignupPage() {
                         setForm({ ...form, email: e.target.value })
                       }
                       placeholder="name@example.com"
-                      className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700/80 bg-slate-50/70 dark:bg-slate-800/50 text-sm text-slate-900 dark:text-white placeholder:text-slate-400 focus:bg-white dark:focus:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/25 focus:border-blue-500 transition-all"
+                      className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700/80 bg-slate-50/70 dark:bg-slate-800/50 text-base sm:text-sm text-slate-900 dark:text-white placeholder:text-slate-400 focus:bg-white dark:focus:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/25 focus:border-blue-500 transition-all"
                     />
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 sm:gap-4">
                   <div className="space-y-1.5">
                     <label
                       htmlFor="signup-password"
@@ -253,7 +280,7 @@ export default function SignupPage() {
                       {t.password}
                     </label>
                     <div className="relative group">
-                      <Lock className="w-4 h-4 text-slate-400 group-focus-within:text-blue-600 dark:group-focus-within:text-blue-400 transition-colors absolute left-3 top-1/2 -translate-y-1/2" />
+                      <Lock className="w-4 h-4 text-slate-400 group-focus-within:text-blue-600 dark:group-focus-within:text-blue-400 transition-colors absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
                       <input
                         id="signup-password"
                         type={showPass ? "text" : "password"}
@@ -265,7 +292,7 @@ export default function SignupPage() {
                           setForm({ ...form, password: e.target.value })
                         }
                         placeholder="••••••••"
-                        className="w-full pl-9 pr-9 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700/80 bg-slate-50/70 dark:bg-slate-800/50 text-sm text-slate-900 dark:text-white placeholder:text-slate-400 focus:bg-white dark:focus:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/25 focus:border-blue-500 transition-all"
+                        className="w-full pl-10 pr-10 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700/80 bg-slate-50/70 dark:bg-slate-800/50 text-base sm:text-sm text-slate-900 dark:text-white placeholder:text-slate-400 focus:bg-white dark:focus:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/25 focus:border-blue-500 transition-all"
                       />
                       <button
                         type="button"
@@ -290,7 +317,7 @@ export default function SignupPage() {
                       {t.confirmPassword}
                     </label>
                     <div className="relative group">
-                      <Lock className="w-4 h-4 text-slate-400 group-focus-within:text-blue-600 dark:group-focus-within:text-blue-400 transition-colors absolute left-3 top-1/2 -translate-y-1/2" />
+                      <Lock className="w-4 h-4 text-slate-400 group-focus-within:text-blue-600 dark:group-focus-within:text-blue-400 transition-colors absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
                       <input
                         id="signup-confirm-password"
                         type={showConfirmPass ? "text" : "password"}
@@ -302,7 +329,7 @@ export default function SignupPage() {
                           setForm({ ...form, confirmPassword: e.target.value })
                         }
                         placeholder="••••••••"
-                        className="w-full pl-9 pr-9 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700/80 bg-slate-50/70 dark:bg-slate-800/50 text-sm text-slate-900 dark:text-white placeholder:text-slate-400 focus:bg-white dark:focus:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/25 focus:border-blue-500 transition-all"
+                        className="w-full pl-10 pr-10 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700/80 bg-slate-50/70 dark:bg-slate-800/50 text-base sm:text-sm text-slate-900 dark:text-white placeholder:text-slate-400 focus:bg-white dark:focus:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/25 focus:border-blue-500 transition-all"
                       />
                       <button
                         type="button"
@@ -325,10 +352,10 @@ export default function SignupPage() {
                 <button
                   type="submit"
                   disabled={isLoading}
-                  className="w-full py-2.5 px-4 rounded-xl bg-blue-600 hover:bg-blue-700 active:scale-[0.99] text-white font-semibold text-sm shadow-md shadow-blue-600/20 flex items-center justify-center gap-2 transition-all disabled:opacity-60 cursor-pointer"
+                  className="w-full py-2.5 sm:py-3 px-4 rounded-xl bg-blue-600 hover:bg-blue-700 active:scale-[0.99] text-white font-semibold text-sm shadow-md shadow-blue-600/20 flex items-center justify-center gap-2 text-center leading-snug transition-all disabled:opacity-60 cursor-pointer"
                 >
                   <span>{isLoading ? t.sendingOtp : t.signupBtn}</span>
-                  {!isLoading && <ArrowRight className="w-4 h-4" />}
+                  {!isLoading && <ArrowRight className="w-4 h-4 shrink-0" />}
                 </button>
               </form>
 
@@ -340,7 +367,10 @@ export default function SignupPage() {
                 <div className="grow border-t border-slate-200 dark:border-slate-800" />
               </div>
 
-              <div className="w-full flex justify-center">
+              <div
+                ref={googleContainerRef}
+                className="w-full flex justify-center overflow-hidden"
+              >
                 <GoogleLogin
                   onSuccess={async (credentialResponse: CredentialResponse) => {
                     if (!credentialResponse.credential) return;
@@ -372,17 +402,17 @@ export default function SignupPage() {
                   }}
                   theme={theme === "dark" ? "filled_black" : "outline"}
                   size="large"
-                  width="368"
+                  width={String(googleBtnWidth)}
                   text="signup_with"
                   shape="pill"
                 />
               </div>
 
-              <div className="pt-2 border-t border-slate-100 dark:border-slate-800/80 text-center text-sm text-slate-600 dark:text-slate-400">
+              <div className="pt-2 border-t border-slate-100 dark:border-slate-800/80 text-center text-xs sm:text-sm text-slate-600 dark:text-slate-400">
                 {t.hasAccount}{" "}
                 <Link
                   to="/login"
-                  className="font-semibold text-blue-600 dark:text-blue-400 hover:underline"
+                  className="font-semibold text-blue-600 dark:text-blue-400 hover:underline inline-block"
                 >
                   {t.goLogin}
                 </Link>
@@ -390,8 +420,8 @@ export default function SignupPage() {
             </div>
           </div>
 
-          <div className="mt-5 flex items-center justify-center gap-1.5 text-xs text-slate-400 dark:text-slate-500">
-            <ShieldCheck className="w-3.5 h-3.5" />
+          <div className="mt-4 sm:mt-5 px-2 flex items-center justify-center gap-1.5 text-center text-xs text-slate-400 dark:text-slate-500">
+            <ShieldCheck className="w-3.5 h-3.5 shrink-0" />
             <span>{t.securityNote}</span>
           </div>
         </div>

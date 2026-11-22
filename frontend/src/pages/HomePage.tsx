@@ -1,6 +1,29 @@
 import { useState, useRef, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { SquarePen, LayoutGrid, Plus, BookOpen, FileText, ListFilter, Search, X, PanelLeftClose, PanelLeftOpen, Settings, Sun, Moon, Globe, LogOut, Paperclip, Scale, FileSearch, ListChecks, ArrowUpRight, Loader2, AlertCircle } from 'lucide-react';
+import {
+  SquarePen,
+  LayoutGrid,
+  Plus,
+  BookOpen,
+  FileText,
+  ListFilter,
+  Search,
+  X,
+  PanelLeftClose,
+  PanelLeftOpen,
+  Settings,
+  Sun,
+  Moon,
+  Globe,
+  LogOut,
+  Paperclip,
+  Scale,
+  FileSearch,
+  ListChecks,
+  ArrowUpRight,
+  Loader2,
+  AlertCircle,
+} from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import CreateCollectionModal, { type NewCollectionPayload } from '../components/CreateCollectionModal';
 import { workspaceApi, type CollectionSummary } from '../services/workspaceApi';
@@ -21,7 +44,10 @@ export default function HomePage() {
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [activeCollectionId, setActiveCollectionId] = useState<string>('');
 
-  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+  // เปิดอัตโนมัติเฉพาะบน Tablet/Desktop (>= 768px) และพับเก็บเป็น Drawer บนมือถือ
+  const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(() =>
+    typeof window !== 'undefined' ? window.innerWidth >= 768 : true
+  );
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [sortNewestFirst, setSortNewestFirst] = useState(true);
@@ -46,6 +72,12 @@ export default function HomePage() {
     'Guest User';
   const shortName = currentUser?.first_name || currentUser?.username || 'คุณ';
   const avatarInitial = fullName.charAt(0).toUpperCase();
+
+  const closeSidebarOnMobile = () => {
+    if (typeof window !== 'undefined' && window.innerWidth < 768) {
+      setIsSidebarOpen(false);
+    }
+  };
 
   useEffect(() => {
     let isCancelled = false;
@@ -105,12 +137,17 @@ export default function HomePage() {
   }, []);
 
   const handleLogout = () => {
-  sessionStorage.removeItem('access_token');
-  sessionStorage.removeItem('user');
-  localStorage.removeItem('access_token');
-  localStorage.removeItem('user');
-  navigate('/login', { replace: true });
-};
+    sessionStorage.removeItem('access_token');
+    sessionStorage.removeItem('user');
+    localStorage.removeItem('access_token');
+    localStorage.removeItem('user');
+    navigate('/login', { replace: true });
+  };
+
+  const handleOpenNewModal = () => {
+    closeSidebarOnMobile();
+    setIsModalOpen(true);
+  };
 
   const handleCreateCollection = async ({ name, description, files }: NewCollectionPayload) => {
     const created = await workspaceApi.createCollection(name, description || '', files);
@@ -134,6 +171,7 @@ export default function HomePage() {
 
   const handleOpenCollection = (collectionId: string) => {
     setActiveCollectionId(collectionId);
+    closeSidebarOnMobile();
     navigate(`/chat/${collectionId}`);
   };
 
@@ -249,11 +287,22 @@ export default function HomePage() {
   }[lang];
 
   return (
-    <div className="h-screen flex bg-white dark:bg-slate-950 text-slate-900 dark:text-slate-100 overflow-hidden transition-colors">
-      {/* ================= Gemini-Style Full-Height Left Sidebar ================= */}
+    <div className="h-screen h-dvh flex bg-white dark:bg-slate-950 text-slate-900 dark:text-slate-100 overflow-hidden transition-colors">
+      {/* Backdrop สำหรับ Mobile Drawer (< 768px) */}
+      {isSidebarOpen && (
+        <div
+          onClick={() => setIsSidebarOpen(false)}
+          aria-hidden="true"
+          className="fixed inset-0 z-30 bg-slate-950/40 backdrop-blur-[1px] md:hidden"
+        />
+      )}
+
+      {/* ================= Responsive Left Sidebar (Drawer บนมือถือ / Collapsible Rail บนจอใหญ่) ================= */}
       <aside
-        className={`shrink-0 h-full bg-slate-50/95 dark:bg-slate-900/90 border-r border-slate-200/70 dark:border-slate-800/80 flex flex-col justify-between transition-all duration-200 z-20 ${
-          isSidebarOpen ? 'w-72' : 'w-0 md:w-16 overflow-hidden'
+        className={`fixed inset-y-0 left-0 z-40 md:static shrink-0 h-full bg-slate-50/98 dark:bg-slate-900/95 border-r border-slate-200/70 dark:border-slate-800/80 flex flex-col justify-between transition-all duration-200 ${
+          isSidebarOpen
+            ? 'translate-x-0 w-72 max-w-[85vw]'
+            : '-translate-x-full md:translate-x-0 w-72 md:w-16 overflow-hidden'
         }`}
       >
         {isSidebarOpen ? (
@@ -261,7 +310,11 @@ export default function HomePage() {
             {/* 1. ส่วนหัว Sidebar */}
             <div className="px-4 pt-4 pb-2 space-y-2.5 shrink-0">
               <div className="flex items-center justify-between gap-2">
-                <Link to="/home" className="flex items-center gap-2.5 group min-w-0">
+                <Link
+                  to="/home"
+                  onClick={closeSidebarOnMobile}
+                  className="flex items-center gap-2.5 group min-w-0"
+                >
                   <div className="p-1.5 rounded-lg bg-gradient-to-tr from-blue-600 to-indigo-500 text-white shadow-2xs shrink-0">
                     <FileText className="w-4 h-4" />
                   </div>
@@ -330,11 +383,11 @@ export default function HomePage() {
               <nav className="space-y-0.5">
                 <button
                   type="button"
-                  onClick={() => setIsModalOpen(true)}
+                  onClick={handleOpenNewModal}
                   className="w-full flex items-center gap-3 px-3.5 py-2.5 rounded-full text-sm font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-200/70 dark:hover:bg-slate-800/70 transition-colors cursor-pointer"
                 >
                   <SquarePen className="w-4 h-4 text-slate-600 dark:text-slate-300 shrink-0" />
-                  <span>{t.newChat}</span>
+                  <span className="truncate">{t.newChat}</span>
                 </button>
 
                 <button
@@ -343,13 +396,13 @@ export default function HomePage() {
                     if (collections[0]) {
                       handleOpenCollection(collections[0].id);
                     } else {
-                      setIsModalOpen(true);
+                      handleOpenNewModal();
                     }
                   }}
                   className="w-full flex items-center gap-3 px-3.5 py-2.5 rounded-full text-sm font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-200/70 dark:hover:bg-slate-800/70 transition-colors cursor-pointer"
                 >
                   <LayoutGrid className="w-4 h-4 text-slate-600 dark:text-slate-300 shrink-0" />
-                  <span>{t.library}</span>
+                  <span className="truncate">{t.library}</span>
                 </button>
               </nav>
 
@@ -360,11 +413,11 @@ export default function HomePage() {
 
                 <button
                   type="button"
-                  onClick={() => setIsModalOpen(true)}
+                  onClick={handleOpenNewModal}
                   className="w-full flex items-center gap-3 px-3.5 py-2 rounded-full text-sm font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-200/70 dark:hover:bg-slate-800/70 transition-colors cursor-pointer"
                 >
                   <Plus className="w-4 h-4 text-slate-600 dark:text-slate-300 shrink-0" />
-                  <span>{t.newCollection}</span>
+                  <span className="truncate">{t.newCollection}</span>
                 </button>
 
                 {filteredCollections.slice(0, 5).map((col) => (
@@ -398,7 +451,7 @@ export default function HomePage() {
 
                 {isLoadingCollections ? (
                   <div className="px-3.5 py-3 flex items-center gap-2 text-xs text-slate-400">
-                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" />
                     <span>{t.loadingText}</span>
                   </div>
                 ) : sortedCollections.length === 0 ? (
@@ -437,11 +490,11 @@ export default function HomePage() {
                     onClick={toggleLang}
                     className="w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
                   >
-                    <span className="flex items-center gap-2">
-                      <Globe className="w-4 h-4 text-slate-500" />
-                      {t.switchLang}
+                    <span className="flex items-center gap-2 min-w-0">
+                      <Globe className="w-4 h-4 text-slate-500 shrink-0" />
+                      <span className="truncate">{t.switchLang}</span>
                     </span>
-                    <span className="uppercase font-bold text-blue-600 dark:text-blue-400">
+                    <span className="uppercase font-bold text-blue-600 dark:text-blue-400 shrink-0 ml-2">
                       {lang}
                     </span>
                   </button>
@@ -452,11 +505,11 @@ export default function HomePage() {
                     className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
                   >
                     {theme === 'light' ? (
-                      <Moon className="w-4 h-4 text-slate-500" />
+                      <Moon className="w-4 h-4 text-slate-500 shrink-0" />
                     ) : (
-                      <Sun className="w-4 h-4 text-amber-400" />
+                      <Sun className="w-4 h-4 text-amber-400 shrink-0" />
                     )}
-                    <span>{t.switchTheme}</span>
+                    <span className="truncate">{t.switchTheme}</span>
                   </button>
 
                   <div className="h-px bg-slate-100 dark:bg-slate-800 my-1" />
@@ -466,7 +519,7 @@ export default function HomePage() {
                     onClick={handleLogout}
                     className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-medium text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-colors cursor-pointer"
                   >
-                    <LogOut className="w-4 h-4" />
+                    <LogOut className="w-4 h-4 shrink-0" />
                     <span>{t.logout}</span>
                   </button>
                 </div>
@@ -500,7 +553,7 @@ export default function HomePage() {
             </div>
           </>
         ) : (
-          /* ================= Mini Rail เมื่อพับเก็บ Sidebar ================= */
+          /* ================= Mini Rail เมื่อพับเก็บ Sidebar บน Desktop ================= */
           <div className="hidden md:flex flex-col items-center justify-between h-full py-4">
             <div className="flex flex-col items-center gap-3">
               <button
@@ -515,7 +568,7 @@ export default function HomePage() {
 
               <button
                 type="button"
-                onClick={() => setIsModalOpen(true)}
+                onClick={handleOpenNewModal}
                 title={t.newChat}
                 aria-label={t.newChat}
                 className="w-9 h-9 rounded-full hover:bg-slate-200/70 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 flex items-center justify-center transition-colors cursor-pointer"
@@ -548,33 +601,42 @@ export default function HomePage() {
 
       {/* ================= Right Main Workspace Area ================= */}
       <div className="flex-1 flex flex-col min-w-0 h-full overflow-hidden">
-        <header className="h-14 px-4 sm:px-6 flex items-center justify-between gap-3 shrink-0">
-          <div className="flex items-center gap-2">
-            {!isSidebarOpen && (
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => setIsSidebarOpen(true)}
-                  aria-label={t.expandSidebar}
-                  className="md:hidden p-2 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 cursor-pointer"
-                >
-                  <PanelLeftOpen className="w-4 h-4" />
-                </button>
-                <span className="font-bold text-lg tracking-tight text-slate-800 dark:text-white">
-                  Textspace
-                </span>
+        <header className="h-14 px-3.5 sm:px-6 flex items-center justify-between gap-2 shrink-0 border-b border-transparent">
+          <div className="flex items-center gap-2 min-w-0">
+            {/* ปุ่มเปิด Drawer บนมือถือ */}
+            <button
+              type="button"
+              onClick={() => setIsSidebarOpen(true)}
+              aria-label={t.expandSidebar}
+              className="md:hidden p-2 rounded-full bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 transition-colors cursor-pointer shrink-0"
+            >
+              <PanelLeftOpen className="w-4 h-4" />
+            </button>
+
+            {/* โลโก้บน Header: แสดงตลอดบนมือถือ และแสดงบน Desktop เฉพาะตอนพับ Sidebar */}
+            <Link
+              to="/home"
+              className={`flex items-center gap-2 min-w-0 ${
+                isSidebarOpen ? 'md:hidden' : 'flex'
+              }`}
+            >
+              <div className="p-1.5 rounded-lg bg-gradient-to-tr from-blue-600 to-indigo-500 text-white shadow-2xs md:hidden shrink-0">
+                <FileText className="w-3.5 h-3.5" />
               </div>
-            )}
+              <span className="font-bold text-base sm:text-lg tracking-tight text-slate-800 dark:text-white truncate">
+                Textspace
+              </span>
+            </Link>
           </div>
 
-          <div className="flex items-center gap-1.5 sm:gap-2">
+          <div className="flex items-center gap-1 sm:gap-2 shrink-0">
             <button
               type="button"
               onClick={toggleLang}
               title={t.switchLang}
               className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-full text-xs font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
             >
-              <Globe className="w-4 h-4" />
+              <Globe className="w-4 h-4 shrink-0" />
               <span className="uppercase">{lang}</span>
             </button>
 
@@ -594,46 +656,47 @@ export default function HomePage() {
           </div>
         </header>
 
-        <main className="flex-1 overflow-y-auto px-4 sm:px-8 py-6 sm:py-10">
-          <div className="max-w-3xl mx-auto space-y-10">
-            <div className="space-y-2 pt-2 sm:pt-4">
-              <h1 className="text-3xl sm:text-4xl font-bold tracking-tight bg-gradient-to-r from-blue-600 via-indigo-500 to-purple-500 bg-clip-text text-transparent">
+        <main className="flex-1 overflow-y-auto px-4 sm:px-6 md:px-8 py-5 sm:py-8 md:py-10">
+          <div className="max-w-3xl mx-auto space-y-7 sm:space-y-10">
+            {/* Greeting */}
+            <div className="space-y-1.5 sm:space-y-2 pt-1 sm:pt-4">
+              <h1 className="text-2xl sm:text-3xl md:text-4xl font-bold tracking-tight bg-gradient-to-r from-blue-600 via-indigo-500 to-purple-500 bg-clip-text text-transparent break-words">
                 {t.greetingPrefix}
               </h1>
-              <p className="text-lg sm:text-2xl font-medium text-slate-400 dark:text-slate-500">
+              <p className="text-base sm:text-xl md:text-2xl font-medium text-slate-400 dark:text-slate-500 leading-snug">
                 {t.greetingSub}
               </p>
             </div>
 
+            {/* Prompt / Create Workspace Box */}
             <div
-              onClick={() => setIsModalOpen(true)}
+              onClick={handleOpenNewModal}
               role="button"
               tabIndex={0}
               onKeyDown={(e) => {
-                if (e.key === 'Enter' || e.key === ' ') setIsModalOpen(true);
+                if (e.key === 'Enter' || e.key === ' ') handleOpenNewModal();
               }}
-              className="group rounded-3xl border border-slate-200 dark:border-slate-800 bg-slate-50/90 dark:bg-slate-900/90 hover:border-blue-500/60 dark:hover:border-blue-500/60 p-4 sm:p-5 shadow-xs hover:shadow-md transition-all cursor-pointer space-y-4"
+              className="group rounded-2xl sm:rounded-3xl border border-slate-200 dark:border-slate-800 bg-slate-50/90 dark:bg-slate-900/90 hover:border-blue-500/60 dark:hover:border-blue-500/60 p-4 sm:p-5 shadow-xs hover:shadow-md transition-all cursor-pointer space-y-3.5 sm:space-y-4"
             >
-              <p className="text-sm sm:text-base text-slate-400 dark:text-slate-500 px-1">
+              <p className="text-sm sm:text-base text-slate-400 dark:text-slate-500 px-0.5 sm:px-1 leading-relaxed">
                 {t.promptBoxPlaceholder}
               </p>
 
-              <div className="flex items-center justify-between pt-1">
-                <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white dark:bg-slate-800 border border-slate-200/80 dark:border-slate-700 text-xs font-medium text-slate-500 dark:text-slate-400">
-                  <Paperclip className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5 pt-1">
+                <span className="inline-flex items-center justify-center sm:justify-start gap-1.5 px-3 py-1.5 rounded-full bg-white dark:bg-slate-800 border border-slate-200/80 dark:border-slate-700 text-xs font-medium text-slate-500 dark:text-slate-400">
+                  <Paperclip className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400 shrink-0" />
                   <span>PDF, DOCX, TXT</span>
                 </span>
 
-                <span className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full bg-blue-600 group-hover:bg-blue-700 text-white text-xs sm:text-sm font-semibold transition-colors">
-                  <Plus className="w-4 h-4" />
+                <span className="inline-flex items-center justify-center gap-1.5 px-4 py-2.5 sm:py-2 rounded-full bg-blue-600 group-hover:bg-blue-700 text-white text-xs sm:text-sm font-semibold transition-colors">
+                  <Plus className="w-4 h-4 shrink-0" />
                   <span>{t.attachAndStart}</span>
                 </span>
               </div>
             </div>
 
-            
-
-            <div className="space-y-3 pt-2">
+            {/* Recent Collections */}
+            <div className="space-y-3 pt-1 sm:pt-2">
               <h2 className="text-xs font-semibold uppercase tracking-wider text-slate-400">
                 {t.recentTitle}
               </h2>
@@ -655,7 +718,7 @@ export default function HomePage() {
                   ))}
                 </div>
               ) : collections.length === 0 ? (
-                <div className="p-6 rounded-2xl border border-dashed border-slate-200 dark:border-slate-800 text-center text-xs text-slate-400">
+                <div className="p-5 sm:p-6 rounded-2xl border border-dashed border-slate-200 dark:border-slate-800 text-center text-xs text-slate-400 leading-relaxed">
                   {t.emptyCollections}
                 </div>
               ) : (
@@ -664,7 +727,7 @@ export default function HomePage() {
                     <div
                       key={item.id}
                       onClick={() => handleOpenCollection(item.id)}
-                      className="group p-4 rounded-2xl border border-slate-200/80 dark:border-slate-800/80 bg-white dark:bg-slate-900/50 hover:border-blue-500/50 transition-all flex items-center justify-between gap-3 cursor-pointer"
+                      className="group p-3.5 sm:p-4 rounded-2xl border border-slate-200/80 dark:border-slate-800/80 bg-white dark:bg-slate-900/50 hover:border-blue-500/50 transition-all flex items-center justify-between gap-3 cursor-pointer"
                     >
                       <div className="flex items-center gap-3 min-w-0">
                         <div className="w-9 h-9 rounded-xl bg-blue-50 dark:bg-blue-950/70 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0">

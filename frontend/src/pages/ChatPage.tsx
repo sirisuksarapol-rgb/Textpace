@@ -97,12 +97,12 @@ function CitationAccordion({
         className="w-full flex items-center justify-between gap-2 text-[10px] font-semibold text-slate-500 dark:text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 transition-colors cursor-pointer py-0.5"
       >
         <span className="inline-flex items-center gap-1">
-          <Quote className="w-3 h-3 text-blue-600 dark:text-blue-400" />
+          <Quote className="w-3 h-3 text-blue-600 dark:text-blue-400 shrink-0" />
           <span>
             {sourceLabel} ({citations.length})
           </span>
         </span>
-        <span className="text-[10px] font-medium text-blue-600 dark:text-blue-400">
+        <span className="text-[10px] font-medium text-blue-600 dark:text-blue-400 shrink-0">
           {isOpen ? "ซ่อน" : "ดูแหล่งอ้างอิง"}
         </span>
       </button>
@@ -150,8 +150,12 @@ export default function ChatPage() {
   const nameInputRef = useRef<HTMLInputElement | null>(null);
   const chatBottomRef = useRef<HTMLDivElement | null>(null);
 
-  const [isLeftOpen, setIsLeftOpen] = useState(true);
+  // เปิดแถบไฟล์อัตโนมัติเฉพาะบน Desktop (>= 1024px) และใช้เป็น Slide-over Drawer บนมือถือ/แท็บเล็ต
+  const [isLeftOpen, setIsLeftOpen] = useState<boolean>(() =>
+    typeof window !== "undefined" ? window.innerWidth >= 1024 : true,
+  );
   const [isRightOpen, setIsRightOpen] = useState(true);
+  const [mobilePane, setMobilePane] = useState<"chat" | "viewer">("chat");
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [fileSearchQuery, setFileSearchQuery] = useState("");
 
@@ -194,6 +198,12 @@ export default function ChatPage() {
     files.find((f) => f.id === selectedFileId) || files[0] || null;
   const currentModelObj =
     AI_MODELS.find((m) => m.id === selectedModel) || AI_MODELS[0];
+
+  const closeLeftDrawerOnMobile = () => {
+    if (typeof window !== "undefined" && window.innerWidth < 1024) {
+      setIsLeftOpen(false);
+    }
+  };
 
   useEffect(() => {
     if (isSearchOpen) {
@@ -320,7 +330,7 @@ export default function ChatPage() {
 
   useEffect(() => {
     chatBottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, isSending]);
+  }, [messages, isSending, mobilePane]);
 
   const handleStartEditName = () => {
     if (!activeChatId || isSavingName) return;
@@ -566,7 +576,7 @@ export default function ChatPage() {
       docNotice:
         files.length > 0
           ? `ประมวลผลรวมเอกสาร ${files.length} ไฟล์ในโปรเจคนี้แล้ว`
-          : "ยังไม่มีไฟล์เอกสาร กรุณาเพิ่มไฟล์ทางฝั่งซ้ายก่อนเริ่มถาม",
+          : "ยังไม่มีไฟล์เอกสาร กรุณาเพิ่มไฟล์ก่อนเริ่มถาม",
       inputPlaceholder: "พิมพ์คำถามเกี่ยวกับเอกสารทั้งหมด...",
       disclaimer:
         "AI อาจทำผิดพลาดได้ โปรดตรวจสอบข้อมูลจากเอกสารต้นฉบับอีกครั้ง",
@@ -576,6 +586,9 @@ export default function ChatPage() {
       expandLeft: "ขยายแถบไฟล์",
       collapseRight: "พับเก็บหน้าต่างแชท",
       expandRight: "ขยายหน้าต่างแชท",
+      mobileChatTab: "แชท AI",
+      mobileDocsTab: "เอกสาร",
+      openFilesDrawer: "รายการไฟล์ในโปรเจค",
     },
     en: {
       defaultTitle: "Document Collection",
@@ -601,7 +614,7 @@ export default function ChatPage() {
       docNotice:
         files.length > 0
           ? `Combined ${files.length} file(s) in this project`
-          : "No files attached yet. Add a file on the left to ground answers.",
+          : "No files attached yet. Add a file to ground answers.",
       inputPlaceholder: "Ask a question across all files...",
       disclaimer:
         "AI can make mistakes. Please verify important details against the source.",
@@ -611,17 +624,82 @@ export default function ChatPage() {
       expandLeft: "Expand files panel",
       collapseRight: "Collapse chat panel",
       expandRight: "Expand chat panel",
+      mobileChatTab: "AI Chat",
+      mobileDocsTab: "Documents",
+      openFilesDrawer: "Workspace files",
     },
   }[lang];
 
+  const showRightContent = isRightOpen || mobilePane === "chat";
+
   return (
-    <div className="h-screen flex flex-col lg:flex-row bg-slate-100/90 dark:bg-slate-950 p-2.5 sm:p-3 gap-2.5 sm:gap-3 text-slate-900 dark:text-slate-100 overflow-hidden transition-colors">
-      {/* ================= 1. การ์ดซ้าย: รายการไฟล์ในห้องแชท ================= */}
+    <div className="h-screen h-dvh flex flex-col lg:flex-row bg-slate-100/90 dark:bg-slate-950 p-2 sm:p-3 gap-2 sm:gap-3 text-slate-900 dark:text-slate-100 overflow-hidden transition-colors">
+      {/* ================= แถบนำทางด้านบนสำหรับ Mobile & Tablet (< 1024px) ================= */}
+      <header className="lg:hidden rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 shadow-2xs px-2.5 sm:px-3.5 py-2 flex items-center justify-between gap-2 shrink-0">
+        <div className="flex items-center gap-1.5 sm:gap-2 min-w-0">
+          <button
+            type="button"
+            onClick={() => setIsLeftOpen(true)}
+            title={t.openFilesDrawer}
+            aria-label={t.openFilesDrawer}
+            className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200/80 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-semibold transition-colors cursor-pointer shrink-0"
+          >
+            <PanelLeftOpen className="w-4 h-4 text-blue-600 dark:text-blue-400 shrink-0" />
+            <span className="px-1.5 py-0.2 rounded-full bg-white dark:bg-slate-900 text-[10px] font-bold text-slate-600 dark:text-slate-300">
+              {files.length}
+            </span>
+          </button>
+
+          <span className="text-xs sm:text-sm font-bold text-slate-800 dark:text-slate-100 truncate">
+            {workspaceName || t.defaultTitle}
+          </span>
+        </div>
+
+        {/* ตัวสลับมุมมองเต็มจอระหว่าง แชท AI กับ เอกสาร */}
+        <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 p-1 rounded-xl shrink-0">
+          <button
+            type="button"
+            onClick={() => setMobilePane("chat")}
+            className={`inline-flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors cursor-pointer ${
+              mobilePane === "chat"
+                ? "bg-white dark:bg-slate-900 text-blue-600 dark:text-blue-400 shadow-2xs"
+                : "text-slate-500 hover:text-slate-800 dark:hover:text-slate-200"
+            }`}
+          >
+            <Bot className="w-3.5 h-3.5 shrink-0" />
+            <span>{t.mobileChatTab}</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setMobilePane("viewer")}
+            className={`inline-flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors cursor-pointer ${
+              mobilePane === "viewer"
+                ? "bg-white dark:bg-slate-900 text-blue-600 dark:text-blue-400 shadow-2xs"
+                : "text-slate-500 hover:text-slate-800 dark:hover:text-slate-200"
+            }`}
+          >
+            <FileText className="w-3.5 h-3.5 shrink-0" />
+            <span>{t.mobileDocsTab}</span>
+          </button>
+        </div>
+      </header>
+
+      {/* Backdrop สำหรับ Mobile/Tablet Files Drawer (< 1024px) */}
+      {isLeftOpen && (
+        <div
+          onClick={() => setIsLeftOpen(false)}
+          aria-hidden="true"
+          className="fixed inset-0 z-30 bg-slate-950/40 backdrop-blur-[1px] lg:hidden"
+        />
+      )}
+
+      {/* ================= 1. การ์ดซ้าย: รายการไฟล์ในห้องแชท (Drawer บนมือถือ/แท็บเล็ต, Sidebar บน Desktop) ================= */}
       <aside
-        className={`rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 shadow-2xs flex flex-col justify-between transition-all duration-200 shrink-0 overflow-hidden ${
+        className={`fixed inset-y-0 left-0 z-40 lg:static rounded-r-2xl lg:rounded-2xl bg-white dark:bg-slate-900 border-r lg:border border-slate-200/80 dark:border-slate-800 shadow-xl lg:shadow-2xs flex flex-col justify-between transition-all duration-200 shrink-0 overflow-hidden ${
           isLeftOpen
-            ? "w-full lg:w-72 max-h-64 lg:max-h-none"
-            : "w-full lg:w-12"
+            ? "translate-x-0 w-[85vw] max-w-xs lg:w-72"
+            : "-translate-x-full lg:translate-x-0 w-[85vw] max-w-xs lg:w-12"
         }`}
       >
         {isLeftOpen ? (
@@ -657,7 +735,7 @@ export default function ChatPage() {
                       {isSavingName ? (
                         <Loader2 className="w-3 h-3 animate-spin text-blue-600 shrink-0" />
                       ) : (
-                        <Pencil className="w-3 h-3 text-slate-400 opacity-0 group-hover/title:opacity-100 transition-opacity shrink-0" />
+                        <Pencil className="w-3 h-3 text-slate-400 opacity-70 lg:opacity-0 lg:group-hover/title:opacity-100 transition-opacity shrink-0" />
                       )}
                     </button>
                   )}
@@ -691,11 +769,11 @@ export default function ChatPage() {
                   className="flex-1 inline-flex items-center justify-center gap-1.5 px-3.5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white text-xs font-semibold shadow-2xs shadow-blue-600/20 transition-colors cursor-pointer"
                 >
                   {isUploading ? (
-                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <Loader2 className="w-4 h-4 animate-spin shrink-0" />
                   ) : (
-                    <Plus className="w-4 h-4" />
+                    <Plus className="w-4 h-4 shrink-0" />
                   )}
-                  <span>{t.addFileBtn}</span>
+                  <span className="truncate">{t.addFileBtn}</span>
                 </button>
 
                 <button
@@ -725,7 +803,7 @@ export default function ChatPage() {
                     value={fileSearchQuery}
                     onChange={(e) => setFileSearchQuery(e.target.value)}
                     placeholder={t.searchDocs}
-                    className="w-full pl-8 pr-7 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500/25 focus:border-blue-500"
+                    className="w-full pl-8 pr-7 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 text-base lg:text-xs focus:outline-none focus:ring-2 focus:ring-blue-500/25 focus:border-blue-500"
                   />
                   {fileSearchQuery && (
                     <button
@@ -760,7 +838,7 @@ export default function ChatPage() {
                     ))}
                   </div>
                 ) : filteredFiles.length === 0 ? (
-                  <p className="text-xs text-slate-400 text-center py-6">
+                  <p className="text-xs text-slate-400 text-center py-6 px-2 leading-relaxed">
                     {t.noDocs}
                   </p>
                 ) : (
@@ -772,6 +850,8 @@ export default function ChatPage() {
                         onClick={() => {
                           setSelectedFileId(file.id);
                           setViewerTab("file");
+                          setMobilePane("viewer");
+                          closeLeftDrawerOnMobile();
                         }}
                         className={`group p-3 rounded-xl border transition-all cursor-pointer flex items-center justify-between gap-2.5 ${
                           isSelected
@@ -817,7 +897,7 @@ export default function ChatPage() {
                             void handleRemoveFile(file.id);
                           }}
                           aria-label="Remove file"
-                          className="opacity-0 group-hover:opacity-100 p-1 rounded-lg text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/50 transition-all cursor-pointer shrink-0"
+                          className="opacity-100 lg:opacity-0 lg:group-hover:opacity-100 p-1.5 lg:p-1 rounded-lg text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/50 transition-all cursor-pointer shrink-0"
                         >
                           <Trash2 className="w-3.5 h-3.5" />
                         </button>
@@ -832,7 +912,7 @@ export default function ChatPage() {
               <button
                 type="button"
                 onClick={() => navigate("/home")}
-                className="flex-1 flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+                className="flex-1 flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer min-w-0"
               >
                 <ArrowLeft className="w-4 h-4 text-slate-500 shrink-0" />
                 <span className="truncate">{t.backHome}</span>
@@ -865,8 +945,8 @@ export default function ChatPage() {
             </div>
           </>
         ) : (
-          <div className="flex lg:flex-col items-center justify-between h-full p-2">
-            <div className="flex lg:flex-col items-center gap-2">
+          <div className="hidden lg:flex flex-col items-center justify-between h-full p-2">
+            <div className="flex flex-col items-center gap-2">
               <button
                 type="button"
                 onClick={() => setIsLeftOpen(true)}
@@ -901,7 +981,11 @@ export default function ChatPage() {
       </aside>
 
       {/* ================= 2. การ์ดตรงกลาง: พื้นที่แสดงเนื้อหาเอกสาร & สรุปรวมโปรเจค ================= */}
-      <main className="flex-1 min-w-0 min-h-0 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 shadow-2xs flex flex-col overflow-hidden">
+      <main
+        className={`flex-1 min-w-0 min-h-0 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 shadow-2xs flex-col overflow-hidden ${
+          mobilePane === "viewer" ? "flex" : "hidden lg:flex"
+        }`}
+      >
         {isLoadingDetail ? (
           <div className="flex-1 flex flex-col items-center justify-center text-center p-8 text-xs text-slate-400 gap-2">
             <Loader2 className="w-6 h-6 animate-spin text-blue-600" />
@@ -909,8 +993,8 @@ export default function ChatPage() {
           </div>
         ) : selectedFile ? (
           <>
-            <div className="px-4 sm:px-6 py-2.5 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between gap-3 shrink-0">
-              <div className="flex items-center gap-2 min-w-0">
+            <div className="px-3 sm:px-6 py-2.5 border-b border-slate-100 dark:border-slate-800 flex flex-wrap sm:flex-nowrap items-center justify-between gap-2 sm:gap-3 shrink-0">
+              <div className="flex items-center gap-2 min-w-0 flex-1">
                 <FileCheck2 className="w-4 h-4 text-blue-600 dark:text-blue-400 shrink-0" />
                 <span className="text-xs font-semibold text-slate-700 dark:text-slate-200 truncate">
                   {viewerTab === "wiki"
@@ -928,7 +1012,7 @@ export default function ChatPage() {
                 <button
                   type="button"
                   onClick={() => setViewerTab("file")}
-                  className={`px-2.5 py-1 rounded-lg text-[11px] font-medium transition-colors cursor-pointer ${
+                  className={`px-2 sm:px-2.5 py-1 rounded-lg text-[11px] font-medium whitespace-nowrap transition-colors cursor-pointer ${
                     viewerTab === "file"
                       ? "bg-white dark:bg-slate-900 text-blue-600 dark:text-blue-400 shadow-2xs"
                       : "text-slate-500 hover:text-slate-800 dark:hover:text-slate-200"
@@ -939,26 +1023,26 @@ export default function ChatPage() {
                 <button
                   type="button"
                   onClick={() => setViewerTab("wiki")}
-                  className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-medium transition-colors cursor-pointer ${
+                  className={`inline-flex items-center gap-1 px-2 sm:px-2.5 py-1 rounded-lg text-[11px] font-medium whitespace-nowrap transition-colors cursor-pointer ${
                     viewerTab === "wiki"
                       ? "bg-white dark:bg-slate-900 text-blue-600 dark:text-blue-400 shadow-2xs"
                       : "text-slate-500 hover:text-slate-800 dark:hover:text-slate-200"
                   }`}
                 >
-                  <BookOpen className="w-3 h-3" />
+                  <BookOpen className="w-3 h-3 shrink-0" />
                   <span>{t.tabWikiSummary}</span>
                 </button>
               </div>
             </div>
 
             {viewerTab === "wiki" ? (
-              <div className="flex-1 overflow-y-auto p-6 sm:p-10">
+              <div className="flex-1 overflow-y-auto p-4 sm:p-6 md:p-10">
                 <div className="max-w-3xl mx-auto space-y-4">
-                  <div className="px-3.5 py-2.5 rounded-xl bg-blue-50/80 dark:bg-blue-950/40 border border-blue-200/70 dark:border-blue-800/60 text-xs text-blue-700 dark:text-blue-300 flex items-center gap-2">
-                    <Sparkles className="w-4 h-4 shrink-0" />
+                  <div className="px-3.5 py-2.5 rounded-xl bg-blue-50/80 dark:bg-blue-950/40 border border-blue-200/70 dark:border-blue-800/60 text-xs text-blue-700 dark:text-blue-300 flex items-start sm:items-center gap-2 leading-relaxed">
+                    <Sparkles className="w-4 h-4 shrink-0 mt-0.5 sm:mt-0" />
                     <span>{t.combinedWikiBanner}</span>
                   </div>
-                  <pre className="whitespace-pre-wrap font-sans text-xs sm:text-sm leading-relaxed text-slate-800 dark:text-slate-200">
+                  <pre className="whitespace-pre-wrap break-words font-sans text-xs sm:text-sm leading-relaxed text-slate-800 dark:text-slate-200">
                     {combinedWiki ||
                       selectedFile.summaryWiki ||
                       t.noWikiSummary}
@@ -977,9 +1061,9 @@ export default function ChatPage() {
                 className="w-full flex-1 border-0 bg-slate-50 dark:bg-slate-950"
               />
             ) : (
-              <div className="flex-1 overflow-y-auto p-6 sm:p-10">
+              <div className="flex-1 overflow-y-auto p-4 sm:p-6 md:p-10">
                 <div className="max-w-3xl mx-auto">
-                  <pre className="whitespace-pre-wrap font-sans text-xs sm:text-sm leading-relaxed text-slate-800 dark:text-slate-200">
+                  <pre className="whitespace-pre-wrap break-words font-sans text-xs sm:text-sm leading-relaxed text-slate-800 dark:text-slate-200">
                     {textFileContent}
                   </pre>
                 </div>
@@ -987,31 +1071,43 @@ export default function ChatPage() {
             )}
           </>
         ) : (
-          <div className="flex-1 flex flex-col items-center justify-center text-center p-8 text-xs text-slate-400">
-            <FileText className="w-10 h-10 mb-2.5 opacity-35" />
-            <p>{t.noSelectedDoc}</p>
+          <div className="flex-1 flex flex-col items-center justify-center text-center p-6 sm:p-8 text-xs text-slate-400 gap-3">
+            <FileText className="w-10 h-10 opacity-35" />
+            <p className="max-w-xs leading-relaxed">{t.noSelectedDoc}</p>
+            <button
+              type="button"
+              onClick={() => setIsLeftOpen(true)}
+              className="lg:hidden inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-blue-600 text-white text-xs font-semibold cursor-pointer"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              <span>{t.addFileBtn}</span>
+            </button>
           </div>
         )}
       </main>
 
       {/* ================= 3. การ์ดขวา: หน้าต่างแชท Textspace AI ================= */}
       <aside
-        className={`rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 shadow-2xs flex flex-col transition-all duration-200 shrink-0 overflow-hidden ${
+        className={`rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 shadow-2xs flex-col transition-all duration-200 shrink-0 overflow-hidden ${
+          mobilePane === "chat"
+            ? "flex flex-1 min-h-0 w-full"
+            : "hidden lg:flex"
+        } ${
           isRightOpen
-            ? "w-full lg:w-96 xl:w-[410px] h-96 lg:h-auto"
-            : "w-full lg:w-12"
+            ? "lg:flex-initial lg:w-96 xl:w-[410px]"
+            : "lg:flex-initial lg:w-12"
         }`}
       >
-        {isRightOpen ? (
+        {showRightContent ? (
           <>
-            <div className="px-3.5 py-3 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between gap-2 shrink-0">
+            <div className="px-3 sm:px-3.5 py-2.5 sm:py-3 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between gap-2 shrink-0">
               <div className="flex items-center gap-2 min-w-0">
                 <button
                   type="button"
                   onClick={() => setIsRightOpen(false)}
                   title={t.collapseRight}
                   aria-label={t.collapseRight}
-                  className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer shrink-0"
+                  className="hidden lg:inline-flex p-1.5 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer shrink-0"
                 >
                   <PanelRightClose className="w-4 h-4" />
                 </button>
@@ -1040,7 +1136,7 @@ export default function ChatPage() {
                     aria-label="Select AI Model"
                     value={selectedModel}
                     onChange={(e) => setSelectedModel(e.target.value)}
-                    className="pl-7 pr-2.5 py-1 rounded-full border border-slate-200 dark:border-slate-700 bg-slate-50/80 dark:bg-slate-800 text-[11px] font-medium text-slate-700 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500/25 focus:border-blue-500 cursor-pointer max-w-[140px] truncate"
+                    className="pl-7 pr-2 py-1 rounded-full border border-slate-200 dark:border-slate-700 bg-slate-50/80 dark:bg-slate-800 text-[11px] font-medium text-slate-700 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500/25 focus:border-blue-500 cursor-pointer max-w-[118px] sm:max-w-[145px] truncate"
                   >
                     {AI_MODELS.map((m) => (
                       <option key={m.id} value={m.id}>
@@ -1055,7 +1151,7 @@ export default function ChatPage() {
                   onClick={() => void handleResetChat()}
                   title={t.resetChat}
                   aria-label={t.resetChat}
-                  className="w-7 h-7 rounded-full border border-slate-200 dark:border-slate-700 text-slate-500 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-slate-50 dark:hover:bg-slate-800 flex items-center justify-center transition-colors cursor-pointer"
+                  className="w-7 h-7 rounded-full border border-slate-200 dark:border-slate-700 text-slate-500 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-slate-50 dark:hover:bg-slate-800 flex items-center justify-center transition-colors cursor-pointer shrink-0"
                 >
                   <RotateCw className="w-3.5 h-3.5" />
                 </button>
@@ -1063,13 +1159,13 @@ export default function ChatPage() {
             </div>
 
             {chatError && (
-              <div className="mx-3.5 mt-3 p-2.5 rounded-xl border border-rose-200 dark:border-rose-900/60 bg-rose-50/80 dark:bg-rose-950/30 text-rose-600 dark:text-rose-400 text-[11px] flex items-center gap-2 shrink-0">
-                <AlertCircle className="w-3.5 h-3.5 shrink-0" />
-                <span className="truncate">{chatError}</span>
+              <div className="mx-3.5 mt-3 p-2.5 rounded-xl border border-rose-200 dark:border-rose-900/60 bg-rose-50/80 dark:bg-rose-950/30 text-rose-600 dark:text-rose-400 text-[11px] flex items-start gap-2 shrink-0">
+                <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                <span className="break-words">{chatError}</span>
               </div>
             )}
 
-            <div className="flex-1 overflow-y-auto p-4 flex flex-col">
+            <div className="flex-1 overflow-y-auto p-3.5 sm:p-4 flex flex-col">
               {messages.length === 0 ? (
                 <div className="my-auto flex flex-col items-center text-center px-3 space-y-3.5">
                   <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-blue-600/10 to-indigo-500/10 border border-blue-200/70 dark:border-blue-800/60 text-blue-600 dark:text-blue-400 flex items-center justify-center">
@@ -1080,13 +1176,13 @@ export default function ChatPage() {
                     <h2 className="text-base font-bold text-slate-800 dark:text-slate-100">
                       {t.emptyChatTitle}
                     </h2>
-                    <p className="text-xs text-slate-400 leading-relaxed max-w-[250px] mx-auto">
+                    <p className="text-xs text-slate-400 leading-relaxed max-w-[260px] mx-auto">
                       {t.emptyChatDesc}
                     </p>
                   </div>
 
                   <div
-                    className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-medium border ${
+                    className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-medium border max-w-full ${
                       files.length > 0
                         ? "bg-blue-50/80 dark:bg-blue-950/40 border-blue-200/70 dark:border-blue-800/60 text-blue-700 dark:text-blue-300"
                         : "bg-amber-50/90 dark:bg-amber-950/40 border-amber-200/70 dark:border-amber-800/60 text-amber-700 dark:text-amber-300"
@@ -1099,7 +1195,7 @@ export default function ChatPage() {
                           : "bg-amber-500"
                       }`}
                     />
-                    <span>{t.docNotice}</span>
+                    <span className="truncate">{t.docNotice}</span>
                   </div>
                 </div>
               ) : (
@@ -1126,7 +1222,7 @@ export default function ChatPage() {
                         </div>
 
                         <div
-                          className={`max-w-[82%] rounded-2xl px-3.5 py-2.5 text-xs leading-relaxed space-y-2 ${
+                          className={`max-w-[88%] sm:max-w-[82%] rounded-2xl px-3.5 py-2.5 text-xs leading-relaxed space-y-2 break-words ${
                             isUser
                               ? "bg-blue-600 text-white rounded-tr-sm"
                               : "bg-slate-100/90 dark:bg-slate-800/80 text-slate-800 dark:text-slate-100 rounded-tl-sm"
@@ -1134,15 +1230,19 @@ export default function ChatPage() {
                         >
                           {!isUser && (
                             <div className="flex items-center justify-between gap-2 text-[10px] font-semibold text-blue-600 dark:text-blue-400">
-                              <span>{getModelDisplayLabel(msg.modelUsed)}</span>
-                              <span className="text-slate-400 font-normal">
+                              <span className="truncate">
+                                {getModelDisplayLabel(msg.modelUsed)}
+                              </span>
+                              <span className="text-slate-400 font-normal shrink-0">
                                 {msg.timestamp}
                               </span>
                             </div>
                           )}
 
                           {msg.content ? (
-                            <p className="whitespace-pre-wrap">{msg.content}</p>
+                            <p className="whitespace-pre-wrap break-words">
+                              {msg.content}
+                            </p>
                           ) : (
                             <span className="inline-flex items-center gap-1.5 text-slate-400">
                               <Loader2 className="w-3.5 h-3.5 animate-spin text-blue-600" />
@@ -1166,6 +1266,7 @@ export default function ChatPage() {
                                   if (matched) {
                                     setSelectedFileId(matched.id);
                                     setViewerTab("file");
+                                    setMobilePane("viewer");
                                   }
                                 }}
                               />
@@ -1180,14 +1281,17 @@ export default function ChatPage() {
               )}
             </div>
 
-            <form onSubmit={handleSendMessage} className="p-3.5 pt-2 shrink-0">
+            <form
+              onSubmit={handleSendMessage}
+              className="p-3 sm:p-3.5 pt-2 shrink-0"
+            >
               <div className="flex items-center gap-2 pl-4 pr-1.5 py-1.5 rounded-full border border-slate-200 dark:border-slate-700 bg-slate-50/70 dark:bg-slate-800/70 focus-within:border-blue-500 focus-within:bg-white dark:focus-within:bg-slate-900 transition-colors">
                 <input
                   type="text"
                   value={inputText}
                   onChange={(e) => setInputText(e.target.value)}
                   placeholder={t.inputPlaceholder}
-                  className="flex-1 bg-transparent text-xs text-slate-800 dark:text-slate-100 placeholder:text-slate-400 focus:outline-none"
+                  className="flex-1 min-w-0 bg-transparent text-base lg:text-xs text-slate-800 dark:text-slate-100 placeholder:text-slate-400 focus:outline-none"
                 />
                 <button
                   type="submit"
@@ -1198,14 +1302,14 @@ export default function ChatPage() {
                   <Send className="w-3.5 h-3.5" />
                 </button>
               </div>
-              <p className="text-[10px] text-slate-400 text-center mt-2">
+              <p className="text-[10px] text-slate-400 text-center mt-2 leading-snug">
                 {t.disclaimer}
               </p>
             </form>
           </>
         ) : (
-          <div className="flex lg:flex-col items-center justify-between h-full p-2">
-            <div className="flex lg:flex-col items-center gap-2">
+          <div className="hidden lg:flex flex-col items-center justify-between h-full p-2">
+            <div className="flex flex-col items-center gap-2">
               <button
                 type="button"
                 onClick={() => setIsRightOpen(true)}
