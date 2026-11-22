@@ -27,6 +27,7 @@ export interface ChatMessage {
   id: string;
   role: 'user' | 'assistant';
   content: string;
+  agentStatus?: string;
   modelUsed?: string;
   citations?: CitationItem[];
   timestamp: string;
@@ -387,6 +388,7 @@ export const workspaceApi = {
     message: string,
     model: string,
     handlers: {
+      onStatus?: (status: string) => void;
       onCitations?: (citations: CitationItem[]) => void;
       onToken: (token: string) => void;
     }
@@ -429,7 +431,9 @@ export const workspaceApi = {
             detail?: string;
           };
 
-          if (parsed.type === 'citations' && parsed.citations) {
+          if (parsed.type === 'status' && typeof parsed.content === 'string') {
+            handlers.onStatus?.(parsed.content);
+          } else if (parsed.type === 'citations' && parsed.citations) {
             handlers.onCitations?.(normalizeCitations(parsed.citations));
           } else if (parsed.type === 'token' && typeof parsed.content === 'string') {
             handlers.onToken(parsed.content);

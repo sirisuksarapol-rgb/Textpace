@@ -34,6 +34,7 @@ import {
   AlertCircle,
   BookOpen,
   Pencil,
+  UploadCloud,
 } from "lucide-react";
 import { useApp } from "../context/AppContext";
 import {
@@ -51,6 +52,19 @@ interface AiModelOption {
 
 interface ChatLocationState {
   initialDetail?: CollectionDetail;
+}
+
+interface PendingUploadFile {
+  tempId: string;
+  name: string;
+  typeLabel: string;
+}
+
+interface UploadTask {
+  id: string;
+  fileNames: string[];
+  status: "uploading" | "success" | "error";
+  errorMessage?: string;
 }
 
 const AI_MODELS: AiModelOption[] = [
@@ -173,6 +187,9 @@ export default function ChatPage() {
   const [files, setFiles] = useState<WorkspaceFile[]>(
     initialDetail?.documents || [],
   );
+  const [pendingFiles, setPendingFiles] = useState<PendingUploadFile[]>([]);
+  const [uploadTasks, setUploadTasks] = useState<UploadTask[]>([]);
+
   const [selectedFileId, setSelectedFileId] = useState<string>(
     initialDetail?.documents[0]?.id || "",
   );
@@ -188,7 +205,6 @@ export default function ChatPage() {
 
   const [isLoadingDetail, setIsLoadingDetail] =
     useState<boolean>(!initialDetail);
-  const [isUploading, setIsUploading] = useState<boolean>(false);
   const [selectedModel, setSelectedModel] = useState<string>(AI_MODELS[0].id);
   const [inputText, setInputText] = useState("");
   const [isSending, setIsSending] = useState(false);
@@ -198,6 +214,7 @@ export default function ChatPage() {
     files.find((f) => f.id === selectedFileId) || files[0] || null;
   const currentModelObj =
     AI_MODELS.find((m) => m.id === selectedModel) || AI_MODELS[0];
+  const activeUploadCount = pendingFiles.length;
 
   const closeLeftDrawerOnMobile = () => {
     if (typeof window !== "undefined" && window.innerWidth < 1024) {
@@ -387,41 +404,91 @@ export default function ChatPage() {
     }
   };
 
-  const handleAddFiles = async (e: ChangeEvent<HTMLInputElement>) => {
+  const dismissUploadTask = (taskId: string) => {
+    setUploadTasks((prev) => prev.filter((task) => task.id !== taskId));
+  };
+
+  const handleAddFiles = (e: ChangeEvent<HTMLInputElement>) => {
     const picked = Array.from(e.target.files || []);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
     if (picked.length === 0 || !activeChatId) return;
 
-    setIsUploading(true);
-    setChatError(null);
-    try {
-      const addedDocs = await workspaceApi.uploadDocuments(
-        activeChatId,
-        picked,
-      );
-      setFiles((prev) => [...addedDocs, ...prev]);
-      if (addedDocs.length > 0) {
-        setSelectedFileId(addedDocs[0].id);
-        if (addedDocs[0].summaryWiki) {
-          setCombinedWiki(addedDocs[0].summaryWiki);
-        } else {
-          const freshWiki = await workspaceApi.getCombinedWiki(activeChatId);
-          setCombinedWiki(freshWiki);
+    const targetChatId = activeChatId;
+    const taskId = `upload-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+
+    const newPendingItems: PendingUploadFile[] = picked.map((file, idx) => ({
+      tempId: `${taskId}-${idx}`,
+      name: file.name,
+      typeLabel: (file.name.split(".").pop() || "FILE").toUpperCase(),
+    }));
+    const tempIds = new Set(newPendingItems.map((item) => item.tempId));
+
+    setPendingFiles((prev) => [...newPendingItems, ...prev]);
+    setUploadTasks((prev) => [
+      {
+        id: taskId,
+        fileNames: picked.map((f) => f.name),
+        status: "uploading",
+      },
+      ...prev,
+    ]);
+
+    // ทำงานแบบ Background ไม่บล็อกปุ่มและไม่ขัดจังหวะการอ่าน/แชทของผู้ใช้
+    void (async () => {
+      try {
+        const addedDocs = await workspaceApi.uploadDocuments(
+          targetChatId,
+          picked,
+        );
+
+        setPendingFiles((prev) =>
+          prev.filter((item) => !tempIds.has(item.tempId)),
+        );
+        setFiles((prev) => [...addedDocs, ...prev]);
+
+        if (addedDocs.length > 0) {
+          // เลือกไฟล์ใหม่อัตโนมัติเฉพาะกรณีที่ยังไม่มีไฟล์เปิดอ่านอยู่
+          setSelectedFileId((prev) => prev || addedDocs[0].id);
+          if (addedDocs[0].summaryWiki) {
+            setCombinedWiki(addedDocs[0].summaryWiki);
+          } else {
+            const freshWiki =
+              await workspaceApi.getCombinedWiki(targetChatId);
+            setCombinedWiki(freshWiki);
+          }
         }
+
+        setUploadTasks((prev) =>
+          prev.map((task) =>
+            task.id === taskId ? { ...task, status: "success" } : task,
+          ),
+        );
+
+        window.setTimeout(() => {
+          setUploadTasks((prev) => prev.filter((task) => task.id !== taskId));
+        }, 4000);
+      } catch (err) {
+        setPendingFiles((prev) =>
+          prev.filter((item) => !tempIds.has(item.tempId)),
+        );
+        const errMsg =
+          err instanceof Error
+            ? err.message
+            : lang === "th"
+              ? "อัปโหลดไฟล์ไม่สำเร็จ"
+              : "Failed to upload files";
+
+        setUploadTasks((prev) =>
+          prev.map((task) =>
+            task.id === taskId
+              ? { ...task, status: "error", errorMessage: errMsg }
+              : task,
+          ),
+        );
       }
-    } catch (err) {
-      setChatError(
-        err instanceof Error
-          ? err.message
-          : lang === "th"
-            ? "อัปโหลดไฟล์ไม่สำเร็จ"
-            : "Failed to upload files",
-      );
-    } finally {
-      setIsUploading(false);
-      if (fileInputRef.current) {
-        fileInputRef.current.value = "";
-      }
-    }
+    })();
   };
 
   const handleRemoveFile = async (docId: string) => {
@@ -511,6 +578,13 @@ export default function ChatPage() {
         trimmed,
         selectedModel,
         {
+          onStatus: (status) => {
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.id === aiMsgId ? { ...m, agentStatus: status } : m,
+              ),
+            );
+          },
           onCitations: (citations) => {
             setMessages((prev) =>
               prev.map((m) => (m.id === aiMsgId ? { ...m, citations } : m)),
@@ -519,7 +593,9 @@ export default function ChatPage() {
           onToken: (token) => {
             setMessages((prev) =>
               prev.map((m) =>
-                m.id === aiMsgId ? { ...m, content: m.content + token } : m,
+                m.id === aiMsgId
+                  ? { ...m, agentStatus: undefined, content: m.content + token }
+                  : m,
               ),
             );
           },
@@ -541,10 +617,13 @@ export default function ChatPage() {
     }
   };
 
-  const filteredFiles = files.filter((f) => {
-    const q = fileSearchQuery.trim().toLowerCase();
-    return q ? f.name.toLowerCase().includes(q) : true;
-  });
+  const q = fileSearchQuery.trim().toLowerCase();
+  const filteredPendingFiles = pendingFiles.filter((f) =>
+    q ? f.name.toLowerCase().includes(q) : true,
+  );
+  const filteredFiles = files.filter((f) =>
+    q ? f.name.toLowerCase().includes(q) : true,
+  );
 
   const getModelDisplayLabel = (modelId?: string) => {
     if (!modelId) return currentModelObj.label;
@@ -555,10 +634,18 @@ export default function ChatPage() {
     th: {
       defaultTitle: "คอลเลกชันเอกสาร",
       editTitleHint: "คลิกเพื่อแก้ไขชื่อโปรเจค",
-      addFileBtn: isUploading ? "กำลังประมวลผลรวม..." : "เพิ่มไฟล์",
+      addFileBtn: "เพิ่มไฟล์",
       searchDocs: "ค้นหาไฟล์...",
       docsLabel: "ไฟล์ในห้องแชท",
       readyStatus: "พร้อมใช้",
+      uploadingFileStatus: "กำลังอัปโหลด...",
+      uploadingBannerTitle: (count: number) =>
+        `กำลังอัปโหลดและประมวลผล ${count} ไฟล์`,
+      uploadingBannerDesc:
+        "คุณสามารถอ่านเอกสารหรือใช้งานแชทต่อได้ตามปกติ",
+      uploadSuccessTitle: (count: number) =>
+        `เพิ่ม ${count} ไฟล์เรียบร้อยแล้ว`,
+      uploadErrorTitle: "อัปโหลดไฟล์ไม่สำเร็จ",
       noDocs: 'ยังไม่มีไฟล์ในห้องแชทนี้ กดปุ่ม "เพิ่มไฟล์" เพื่ออัปโหลด',
       backHome: "กลับหน้าหลัก",
       tabRawFile: "เอกสารต้นฉบับ",
@@ -576,7 +663,9 @@ export default function ChatPage() {
       docNotice:
         files.length > 0
           ? `ประมวลผลรวมเอกสาร ${files.length} ไฟล์ในโปรเจคนี้แล้ว`
-          : "ยังไม่มีไฟล์เอกสาร กรุณาเพิ่มไฟล์ก่อนเริ่มถาม",
+          : activeUploadCount > 0
+            ? `กำลังนำเข้าเอกสาร ${activeUploadCount} ไฟล์ในเบื้องหลัง...`
+            : "ยังไม่มีไฟล์เอกสาร กรุณาเพิ่มไฟล์ก่อนเริ่มถาม",
       inputPlaceholder: "พิมพ์คำถามเกี่ยวกับเอกสารทั้งหมด...",
       disclaimer:
         "AI อาจทำผิดพลาดได้ โปรดตรวจสอบข้อมูลจากเอกสารต้นฉบับอีกครั้ง",
@@ -593,10 +682,18 @@ export default function ChatPage() {
     en: {
       defaultTitle: "Document Collection",
       editTitleHint: "Click to rename project",
-      addFileBtn: isUploading ? "Processing all..." : "Add File",
+      addFileBtn: "Add File",
       searchDocs: "Search files...",
       docsLabel: "Workspace Files",
       readyStatus: "Ready",
+      uploadingFileStatus: "Uploading...",
+      uploadingBannerTitle: (count: number) =>
+        `Uploading & processing ${count} file(s)`,
+      uploadingBannerDesc:
+        "You can keep reading documents or chatting while this finishes",
+      uploadSuccessTitle: (count: number) =>
+        `Added ${count} file(s) successfully`,
+      uploadErrorTitle: "File upload failed",
       noDocs: 'No files in this workspace. Click "Add File" to upload.',
       backHome: "Back to Home",
       tabRawFile: "Source Document",
@@ -614,7 +711,9 @@ export default function ChatPage() {
       docNotice:
         files.length > 0
           ? `Combined ${files.length} file(s) in this project`
-          : "No files attached yet. Add a file to ground answers.",
+          : activeUploadCount > 0
+            ? `Indexing ${activeUploadCount} file(s) in background...`
+            : "No files attached yet. Add a file to ground answers.",
       inputPlaceholder: "Ask a question across all files...",
       disclaimer:
         "AI can make mistakes. Please verify important details against the source.",
@@ -633,7 +732,7 @@ export default function ChatPage() {
   const showRightContent = isRightOpen || mobilePane === "chat";
 
   return (
-    <div className="h-screen h-dvh flex flex-col lg:flex-row bg-slate-100/90 dark:bg-slate-950 p-2 sm:p-3 gap-2 sm:gap-3 text-slate-900 dark:text-slate-100 overflow-hidden transition-colors">
+    <div className="h-screen h-dvh flex flex-col lg:flex-row bg-slate-100/90 dark:bg-slate-950 p-2 sm:p-3 gap-2 sm:gap-3 text-slate-900 dark:text-slate-100 overflow-hidden transition-colors relative">
       {/* ================= แถบนำทางด้านบนสำหรับ Mobile & Tablet (< 1024px) ================= */}
       <header className="lg:hidden rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 shadow-2xs px-2.5 sm:px-3.5 py-2 flex items-center justify-between gap-2 shrink-0">
         <div className="flex items-center gap-1.5 sm:gap-2 min-w-0">
@@ -644,9 +743,14 @@ export default function ChatPage() {
             aria-label={t.openFilesDrawer}
             className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200/80 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-semibold transition-colors cursor-pointer shrink-0"
           >
-            <PanelLeftOpen className="w-4 h-4 text-blue-600 dark:text-blue-400 shrink-0" />
+            {activeUploadCount > 0 ? (
+              <Loader2 className="w-4 h-4 text-blue-600 dark:text-blue-400 animate-spin shrink-0" />
+            ) : (
+              <PanelLeftOpen className="w-4 h-4 text-blue-600 dark:text-blue-400 shrink-0" />
+            )}
             <span className="px-1.5 py-0.2 rounded-full bg-white dark:bg-slate-900 text-[10px] font-bold text-slate-600 dark:text-slate-300">
               {files.length}
+              {activeUploadCount > 0 ? `+${activeUploadCount}` : ""}
             </span>
           </button>
 
@@ -694,7 +798,7 @@ export default function ChatPage() {
         />
       )}
 
-      {/* ================= 1. การ์ดซ้าย: รายการไฟล์ในห้องแชท (Drawer บนมือถือ/แท็บเล็ต, Sidebar บน Desktop) ================= */}
+      {/* ================= 1. การ์ดซ้าย: รายการไฟล์ในห้องแชท ================= */}
       <aside
         className={`fixed inset-y-0 left-0 z-40 lg:static rounded-r-2xl lg:rounded-2xl bg-white dark:bg-slate-900 border-r lg:border border-slate-200/80 dark:border-slate-800 shadow-xl lg:shadow-2xs flex flex-col justify-between transition-all duration-200 shrink-0 overflow-hidden ${
           isLeftOpen
@@ -762,17 +866,13 @@ export default function ChatPage() {
                   className="hidden"
                 />
 
+                {/* ปุ่มเพิ่มไฟล์พร้อมกดซ้ำได้ตลอด ไม่ล็อกผู้ใช้ */}
                 <button
                   type="button"
-                  disabled={isUploading}
                   onClick={() => fileInputRef.current?.click()}
-                  className="flex-1 inline-flex items-center justify-center gap-1.5 px-3.5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white text-xs font-semibold shadow-2xs shadow-blue-600/20 transition-colors cursor-pointer"
+                  className="flex-1 inline-flex items-center justify-center gap-1.5 px-3.5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold shadow-2xs shadow-blue-600/20 transition-colors cursor-pointer"
                 >
-                  {isUploading ? (
-                    <Loader2 className="w-4 h-4 animate-spin shrink-0" />
-                  ) : (
-                    <Plus className="w-4 h-4 shrink-0" />
-                  )}
+                  <Plus className="w-4 h-4 shrink-0" />
                   <span className="truncate">{t.addFileBtn}</span>
                 </button>
 
@@ -822,9 +922,17 @@ export default function ChatPage() {
                 <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">
                   {t.docsLabel}
                 </span>
-                <span className="px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-[11px] font-semibold text-slate-600 dark:text-slate-300">
-                  {files.length}
-                </span>
+                <div className="flex items-center gap-1.5">
+                  {activeUploadCount > 0 && (
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-blue-50 dark:bg-blue-950/60 border border-blue-200/70 dark:border-blue-800/60 text-[10px] font-semibold text-blue-600 dark:text-blue-400">
+                      <Loader2 className="w-2.5 h-2.5 animate-spin" />
+                      <span>+{activeUploadCount}</span>
+                    </span>
+                  )}
+                  <span className="px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-[11px] font-semibold text-slate-600 dark:text-slate-300">
+                    {files.length}
+                  </span>
+                </div>
               </div>
 
               <div className="flex-1 overflow-y-auto space-y-2 pr-0.5">
@@ -837,73 +945,101 @@ export default function ChatPage() {
                       />
                     ))}
                   </div>
-                ) : filteredFiles.length === 0 ? (
+                ) : filteredFiles.length === 0 &&
+                  filteredPendingFiles.length === 0 ? (
                   <p className="text-xs text-slate-400 text-center py-6 px-2 leading-relaxed">
                     {t.noDocs}
                   </p>
                 ) : (
-                  filteredFiles.map((file) => {
-                    const isSelected = file.id === selectedFile?.id;
-                    return (
+                  <>
+                    {/* รายการไฟล์ที่กำลังอัปโหลดอยู่ (แสดงทันทีแบบ Optimistic) */}
+                    {filteredPendingFiles.map((pending) => (
                       <div
-                        key={file.id}
-                        onClick={() => {
-                          setSelectedFileId(file.id);
-                          setViewerTab("file");
-                          setMobilePane("viewer");
-                          closeLeftDrawerOnMobile();
-                        }}
-                        className={`group p-3 rounded-xl border transition-all cursor-pointer flex items-center justify-between gap-2.5 ${
-                          isSelected
-                            ? "bg-blue-50/85 dark:bg-blue-950/45 border-blue-200 dark:border-blue-800/80 shadow-2xs"
-                            : "bg-slate-50/70 dark:bg-slate-800/40 border-transparent hover:bg-slate-100/80 dark:hover:bg-slate-800/70"
-                        }`}
+                        key={pending.tempId}
+                        className="p-3 rounded-xl border border-blue-200/70 dark:border-blue-800/60 bg-blue-50/40 dark:bg-blue-950/20 flex items-center gap-2.5 animate-pulse"
                       >
-                        <div className="flex items-center gap-2.5 min-w-0">
-                          <div
-                            className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ${
-                              isSelected
-                                ? "bg-blue-600 text-white"
-                                : "bg-white dark:bg-slate-800 text-blue-600 dark:text-blue-400 border border-slate-200/70 dark:border-slate-700"
-                            }`}
-                          >
-                            <FileText className="w-4 h-4" />
-                          </div>
-                          <div className="min-w-0 space-y-0.5">
-                            <p
-                              className={`text-xs font-semibold truncate ${
-                                isSelected
-                                  ? "text-blue-700 dark:text-blue-300"
-                                  : "text-slate-800 dark:text-slate-100"
-                              }`}
-                            >
-                              {file.name}
-                            </p>
-                            <div className="flex items-center gap-1.5 text-[11px] text-slate-400">
-                              <span>{file.typeLabel}</span>
-                              <span>•</span>
-                              <span className="inline-flex items-center gap-1 text-emerald-600 dark:text-emerald-400 font-medium">
-                                <CheckCircle2 className="w-3 h-3" />
-                                {t.readyStatus}
-                              </span>
-                            </div>
+                        <div className="w-8 h-8 rounded-xl bg-blue-100 dark:bg-blue-900/50 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0">
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                        </div>
+                        <div className="min-w-0 space-y-0.5 flex-1">
+                          <p className="text-xs font-semibold text-slate-700 dark:text-slate-200 truncate">
+                            {pending.name}
+                          </p>
+                          <div className="flex items-center gap-1.5 text-[11px] text-slate-400">
+                            <span>{pending.typeLabel}</span>
+                            <span>•</span>
+                            <span className="text-blue-600 dark:text-blue-400 font-medium">
+                              {t.uploadingFileStatus}
+                            </span>
                           </div>
                         </div>
-
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            void handleRemoveFile(file.id);
-                          }}
-                          aria-label="Remove file"
-                          className="opacity-100 lg:opacity-0 lg:group-hover:opacity-100 p-1.5 lg:p-1 rounded-lg text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/50 transition-all cursor-pointer shrink-0"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
                       </div>
-                    );
-                  })
+                    ))}
+
+                    {/* รายการไฟล์ที่พร้อมใช้งานแล้ว */}
+                    {filteredFiles.map((file) => {
+                      const isSelected = file.id === selectedFile?.id;
+                      return (
+                        <div
+                          key={file.id}
+                          onClick={() => {
+                            setSelectedFileId(file.id);
+                            setViewerTab("file");
+                            setMobilePane("viewer");
+                            closeLeftDrawerOnMobile();
+                          }}
+                          className={`group p-3 rounded-xl border transition-all cursor-pointer flex items-center justify-between gap-2.5 ${
+                            isSelected
+                              ? "bg-blue-50/85 dark:bg-blue-950/45 border-blue-200 dark:border-blue-800/80 shadow-2xs"
+                              : "bg-slate-50/70 dark:bg-slate-800/40 border-transparent hover:bg-slate-100/80 dark:hover:bg-slate-800/70"
+                          }`}
+                        >
+                          <div className="flex items-center gap-2.5 min-w-0">
+                            <div
+                              className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ${
+                                isSelected
+                                  ? "bg-blue-600 text-white"
+                                  : "bg-white dark:bg-slate-800 text-blue-600 dark:text-blue-400 border border-slate-200/70 dark:border-slate-700"
+                              }`}
+                            >
+                              <FileText className="w-4 h-4" />
+                            </div>
+                            <div className="min-w-0 space-y-0.5">
+                              <p
+                                className={`text-xs font-semibold truncate ${
+                                  isSelected
+                                    ? "text-blue-700 dark:text-blue-300"
+                                    : "text-slate-800 dark:text-slate-100"
+                                }`}
+                              >
+                                {file.name}
+                              </p>
+                              <div className="flex items-center gap-1.5 text-[11px] text-slate-400">
+                                <span>{file.typeLabel}</span>
+                                <span>•</span>
+                                <span className="inline-flex items-center gap-1 text-emerald-600 dark:text-emerald-400 font-medium">
+                                  <CheckCircle2 className="w-3 h-3" />
+                                  {t.readyStatus}
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              void handleRemoveFile(file.id);
+                            }}
+                            aria-label="Remove file"
+                            className="opacity-100 lg:opacity-0 lg:group-hover:opacity-100 p-1.5 lg:p-1 rounded-lg text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/50 transition-all cursor-pointer shrink-0"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </>
                 )}
               </div>
             </div>
@@ -952,9 +1088,12 @@ export default function ChatPage() {
                 onClick={() => setIsLeftOpen(true)}
                 title={t.expandLeft}
                 aria-label={t.expandLeft}
-                className="p-2 rounded-xl text-slate-500 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+                className="relative p-2 rounded-xl text-slate-500 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
               >
                 <PanelLeftOpen className="w-4 h-4" />
+                {activeUploadCount > 0 && (
+                  <span className="w-2 h-2 rounded-full bg-blue-600 animate-ping absolute top-1.5 right-1.5" />
+                )}
               </button>
               <button
                 type="button"
@@ -1072,16 +1211,32 @@ export default function ChatPage() {
           </>
         ) : (
           <div className="flex-1 flex flex-col items-center justify-center text-center p-6 sm:p-8 text-xs text-slate-400 gap-3">
-            <FileText className="w-10 h-10 opacity-35" />
-            <p className="max-w-xs leading-relaxed">{t.noSelectedDoc}</p>
-            <button
-              type="button"
-              onClick={() => setIsLeftOpen(true)}
-              className="lg:hidden inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-blue-600 text-white text-xs font-semibold cursor-pointer"
-            >
-              <Plus className="w-3.5 h-3.5" />
-              <span>{t.addFileBtn}</span>
-            </button>
+            {activeUploadCount > 0 ? (
+              <>
+                <div className="w-12 h-12 rounded-2xl bg-blue-50 dark:bg-blue-950/50 text-blue-600 dark:text-blue-400 flex items-center justify-center">
+                  <UploadCloud className="w-6 h-6 animate-bounce" />
+                </div>
+                <p className="text-sm font-semibold text-slate-700 dark:text-slate-200">
+                  {t.uploadingBannerTitle(activeUploadCount)}
+                </p>
+                <p className="max-w-xs leading-relaxed text-slate-400">
+                  {t.uploadingBannerDesc}
+                </p>
+              </>
+            ) : (
+              <>
+                <FileText className="w-10 h-10 opacity-35" />
+                <p className="max-w-xs leading-relaxed">{t.noSelectedDoc}</p>
+                <button
+                  type="button"
+                  onClick={() => setIsLeftOpen(true)}
+                  className="lg:hidden inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-blue-600 text-white text-xs font-semibold cursor-pointer"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>{t.addFileBtn}</span>
+                </button>
+              </>
+            )}
           </div>
         )}
       </main>
@@ -1244,9 +1399,11 @@ export default function ChatPage() {
                               {msg.content}
                             </p>
                           ) : (
-                            <span className="inline-flex items-center gap-1.5 text-slate-400">
-                              <Loader2 className="w-3.5 h-3.5 animate-spin text-blue-600" />
-                              <span>กำลังค้นหาและสรุปคำตอบ...</span>
+                            <span className="inline-flex items-center gap-1.5 text-slate-500 dark:text-slate-300">
+                              <Loader2 className="w-3.5 h-3.5 animate-spin text-blue-600 shrink-0" />
+                              <span>
+                                {msg.agentStatus || "กำลังค้นหาและสรุปคำตอบ..."}
+                              </span>
                             </span>
                           )}
 
@@ -1331,6 +1488,93 @@ export default function ChatPage() {
           </div>
         )}
       </aside>
+
+      {/* ================= Floating Background Upload Status Widget ================= */}
+      {uploadTasks.length > 0 && (
+        <div
+          aria-live="polite"
+          className="fixed bottom-4 left-1/2 -translate-x-1/2 sm:left-auto sm:translate-x-0 sm:right-5 z-50 w-[92vw] max-w-xs space-y-2 pointer-events-none"
+        >
+          {uploadTasks.map((task) => {
+            const isUploadingTask = task.status === "uploading";
+            const isSuccessTask = task.status === "success";
+            const fileSummary =
+              task.fileNames.length === 1
+                ? task.fileNames[0]
+                : `${task.fileNames[0]} +${task.fileNames.length - 1}`;
+
+            return (
+              <div
+                key={task.id}
+                className={`pointer-events-auto rounded-2xl border p-3 shadow-lg backdrop-blur-md transition-all ${
+                  isUploadingTask
+                    ? "bg-white/95 dark:bg-slate-900/95 border-blue-200 dark:border-blue-800/80"
+                    : isSuccessTask
+                      ? "bg-white/95 dark:bg-slate-900/95 border-emerald-200 dark:border-emerald-800/80"
+                      : "bg-white/95 dark:bg-slate-900/95 border-rose-200 dark:border-rose-800/80"
+                }`}
+              >
+                <div className="flex items-start gap-2.5">
+                  <div
+                    className={`w-7 h-7 rounded-xl flex items-center justify-center shrink-0 mt-0.5 ${
+                      isUploadingTask
+                        ? "bg-blue-50 dark:bg-blue-950/70 text-blue-600 dark:text-blue-400"
+                        : isSuccessTask
+                          ? "bg-emerald-50 dark:bg-emerald-950/70 text-emerald-600 dark:text-emerald-400"
+                          : "bg-rose-50 dark:bg-rose-950/70 text-rose-600 dark:text-rose-400"
+                    }`}
+                  >
+                    {isUploadingTask ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : isSuccessTask ? (
+                      <CheckCircle2 className="w-4 h-4" />
+                    ) : (
+                      <AlertCircle className="w-4 h-4" />
+                    )}
+                  </div>
+
+                  <div className="min-w-0 flex-1 space-y-0.5">
+                    <p className="text-xs font-semibold text-slate-800 dark:text-slate-100">
+                      {isUploadingTask
+                        ? t.uploadingBannerTitle(task.fileNames.length)
+                        : isSuccessTask
+                          ? t.uploadSuccessTitle(task.fileNames.length)
+                          : t.uploadErrorTitle}
+                    </p>
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate">
+                      {task.status === "error" && task.errorMessage
+                        ? task.errorMessage
+                        : fileSummary}
+                    </p>
+                    {isUploadingTask && (
+                      <p className="text-[10px] text-blue-600 dark:text-blue-400 pt-0.5">
+                        {t.uploadingBannerDesc}
+                      </p>
+                    )}
+                  </div>
+
+                  {!isUploadingTask && (
+                    <button
+                      type="button"
+                      onClick={() => dismissUploadTask(task.id)}
+                      aria-label="Dismiss notification"
+                      className="p-1 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer shrink-0"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
+
+                {isUploadingTask && (
+                  <div className="mt-2.5 h-1 w-full rounded-full bg-blue-100 dark:bg-blue-950 overflow-hidden">
+                    <div className="h-full w-2/3 rounded-full bg-blue-600 dark:bg-blue-400 animate-pulse" />
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
