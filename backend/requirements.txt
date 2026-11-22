@@ -13,7 +13,8 @@ PyJWT
 supabase
 google-auth
 
-# RAG, PDF & OpenRouter LLM
+# RAG, PDF, OpenRouter LLM & MCP
 httpx
 chromadb
 pypdf
+mcp

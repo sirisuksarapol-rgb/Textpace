@@ -13,6 +13,7 @@ _chroma_client = chromadb.PersistentClient(path=CHROMA_DIR)
 _vector_collection = _chroma_client.get_or_create_collection(name="textspace_documents")
 
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
+AGENT_FAST_MODEL = "openai/gpt-4o-mini"
 
 
 def extract_pages_from_file(file_path: str, ext: str) -> list[dict]:
@@ -129,7 +130,7 @@ async def generate_combined_wiki_summary(
         "Content-Type": "application/json",
     }
     payload = {
-        "model": "openai/gpt-4o-mini",
+        "model": AGENT_FAST_MODEL,
         "messages": [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_prompt},
@@ -149,6 +150,17 @@ async def generate_combined_wiki_summary(
 
 async def generate_llm_wiki_summary(filename: str, pages: list[dict]) -> str:
     return await generate_combined_wiki_summary(filename, [{"filename": filename, "pages": pages}])
+
+
+def _read_project_combined_wiki(collection_id: int) -> str:
+    wiki_path = os.path.join(settings.UPLOAD_DIR, f"collection_{collection_id}_combined_wiki.md")
+    if os.path.exists(wiki_path):
+        try:
+            with open(wiki_path, "r", encoding="utf-8") as f:
+                return f.read().strip()
+        except Exception:
+            return ""
+    return ""
 
 
 def _ensure_all_docs_indexed(collection_id: int, doc_records: list[dict]) -> None:
@@ -178,7 +190,7 @@ def _ensure_all_docs_indexed(collection_id: int, doc_records: list[dict]) -> Non
                     )
 
 
-def _retrieve_cross_file_chunks(collection_id: int, query_text: str, total_k: int = 12) -> list[dict]:
+def _retrieve_cross_file_chunks(collection_id: int, query_text: str, total_k: int = 10) -> list[dict]:
     existing = _vector_collection.get(where={"collection_id": int(collection_id)})
     all_metadatas = existing.get("metadatas") or []
     if not all_metadatas:
@@ -205,6 +217,7 @@ def _retrieve_cross_file_chunks(collection_id: int, query_text: str, total_k: in
                 seen_ids.add(cid)
                 selected_chunks.append(
                     {
+                        "id": cid,
                         "filename": cmeta.get("filename", "เอกสาร"),
                         "page": int(cmeta.get("page", 1)),
                         "text": ctext,
@@ -226,6 +239,7 @@ def _retrieve_cross_file_chunks(collection_id: int, query_text: str, total_k: in
             seen_ids.add(cid)
             selected_chunks.append(
                 {
+                    "id": cid,
                     "filename": cmeta.get("filename", "เอกสาร"),
                     "page": int(cmeta.get("page", 1)),
                     "text": ctext,
@@ -233,6 +247,146 @@ def _retrieve_cross_file_chunks(collection_id: int, query_text: str, total_k: in
             )
 
     return selected_chunks
+
+
+def _extract_json_object(raw_text: str) -> dict:
+    cleaned = raw_text.strip()
+    if cleaned.startswith("```"):
+        lines = [line for line in cleaned.splitlines() if not line.strip().startswith("```")]
+        cleaned = "\n".join(lines).strip()
+    start = cleaned.find("{")
+    end = cleaned.rfind("}")
+    if start != -1 and end != -1 and end > start:
+        cleaned = cleaned[start : end + 1]
+    return json.loads(cleaned)
+
+
+async def _call_agent_json_step(system_prompt: str, user_prompt: str) -> dict:
+    if not settings.OPENROUTER_API_KEY:
+        return {}
+    headers = {
+        "Authorization": f"Bearer {settings.OPENROUTER_API_KEY}",
+        "Content-Type": "application/json",
+    }
+    payload = {
+        "model": AGENT_FAST_MODEL,
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ],
+        "temperature": 0.0,
+        "response_format": {"type": "json_object"},
+    }
+    try:
+        async with httpx.AsyncClient(timeout=25.0) as client:
+            res = await client.post(OPENROUTER_URL, headers=headers, json=payload)
+            res.raise_for_status()
+            content = res.json()["choices"][0]["message"]["content"]
+            return _extract_json_object(content)
+    except Exception:
+        return {}
+
+
+async def _plan_agent_retrieval(
+    user_message: str,
+    chat_history: list[dict],
+    records: list[dict],
+    has_wiki: bool,
+) -> dict:
+    """Agent ขั้นที่ 1: วิเคราะห์เจตนา เลือกเส้นทางค้นหา และแตกคำถามย่อย"""
+    if not records:
+        return {"strategy": "direct", "sub_queries": []}
+
+    file_names = ", ".join(r["filename"] for r in records)
+    recent_turns = "\n".join(
+        f"{h['role']}: {h['content'][:200]}" for h in chat_history[-4:]
+    )
+
+    system_prompt = (
+        "คุณคือ Query Planner ของระบบ Agentic RAG วิเคราะห์คำถามของผู้ใช้แล้วตอบเป็น JSON เท่านั้น\n"
+        "โครงสร้าง JSON:\n"
+        "{\n"
+        '  "strategy": "wiki_and_vector" | "multi_query" | "direct",\n'
+        '  "sub_queries": ["คำค้นหาที่ 1", "คำค้นหาที่ 2"]\n'
+        "}\n"
+        "เกณฑ์การตัดสินใจ:\n"
+        '- เลือก "wiki_and_vector" เมื่อผู้ใช้ถามภาพรวมทั้งโปรเจค สรุปทุกไฟล์ เปรียบเทียบโครงสร้าง หรือถามภาพใหญ่\n'
+        '- เลือก "multi_query" เมื่อถามรายละเอียดเฉพาะจุด ตัวเลข ขั้นตอน หรือเปรียบเทียบข้ามบท/ข้ามไฟล์ (แตกเป็น 1-3 คำค้นหาย่อยที่ชัดเจน แทนคำสรรพนามจากประวัติแชทให้ครบ)\n'
+        '- เลือก "direct" เฉพาะคำทักทายทั่วไป หรือคำถามที่ถามแค่จำนวน/รายชื่อไฟล์ในโปรเจค\n'
+        f"หมายเหตุ: has_wiki={has_wiki}"
+    )
+    user_prompt = (
+        f"รายชื่อไฟล์ในโปรเจค ({len(records)} ไฟล์): {file_names}\n"
+        f"บทสนทนาก่อนหน้า:\n{recent_turns or 'ไม่มี'}\n\n"
+        f"คำถามล่าสุด: {user_message}"
+    )
+
+    plan = await _call_agent_json_step(system_prompt, user_prompt)
+    strategy = plan.get("strategy")
+    if strategy not in {"wiki_and_vector", "multi_query", "direct"}:
+        strategy = "multi_query"
+
+    raw_queries = plan.get("sub_queries")
+    sub_queries = (
+        [str(q).strip() for q in raw_queries if str(q).strip()][:3]
+        if isinstance(raw_queries, list)
+        else []
+    )
+    if strategy != "direct" and not sub_queries:
+        sub_queries = [user_message]
+
+    return {"strategy": strategy, "sub_queries": sub_queries}
+
+
+async def _grade_and_rewrite_query(
+    user_message: str,
+    retrieved_chunks: list[dict],
+    used_queries: list[str],
+) -> tuple[bool, str]:
+    """Agent ขั้นที่ 3: ประเมินว่าข้อมูลที่ค้นมามีคำตอบพอไหม ถ้าไม่พอให้คิดคำค้นใหม่"""
+    if not retrieved_chunks:
+        return False, ""
+
+    preview = "\n".join(
+        f"- [{c['filename']} หน้า {c['page']}]: {c['text'][:220]}"
+        for c in retrieved_chunks[:8]
+    )
+    system_prompt = (
+        "คุณคือ Retrieval Grader ของระบบ Agentic RAG ตรวจว่าท่อนเอกสารที่ค้นมาเพียงพอต่อการตอบคำถามหรือไม่\n"
+        "ตอบเป็น JSON เท่านั้น:\n"
+        '{"sufficient": true/false, "rewritten_query": "คำค้นหาใหม่ที่เจาะจงขึ้นหาก sufficient เป็น false"}'
+    )
+    user_prompt = (
+        f"คำถามผู้ใช้: {user_message}\n"
+        f"คำค้นหาที่ใช้ไปแล้ว: {used_queries}\n\n"
+        f"ท่อนเอกสารที่ค้นพบ:\n{preview}"
+    )
+
+    grade = await _call_agent_json_step(system_prompt, user_prompt)
+    if not grade:
+        return True, ""
+
+    sufficient = bool(grade.get("sufficient", True))
+    rewritten = str(grade.get("rewritten_query") or "").strip()
+    if rewritten in used_queries:
+        rewritten = ""
+    return sufficient, rewritten
+
+
+def _merge_unique_chunks(existing: list[dict], incoming: list[dict], max_items: int = 14) -> list[dict]:
+    seen = {
+        c.get("id") or f"{c['filename']}_{c['page']}_{c['text'][:60]}"
+        for c in existing
+    }
+    merged = list(existing)
+    for item in incoming:
+        key = item.get("id") or f"{item['filename']}_{item['page']}_{item['text'][:60]}"
+        if key not in seen:
+            seen.add(key)
+            merged.append(item)
+        if len(merged) >= max_items:
+            break
+    return merged
 
 
 async def stream_rag_answer(
@@ -244,8 +398,49 @@ async def stream_rag_answer(
 ) -> AsyncGenerator[dict, None]:
     records = doc_records or []
     _ensure_all_docs_indexed(collection_id, records)
+    combined_wiki = _read_project_combined_wiki(collection_id)
 
-    chunks = _retrieve_cross_file_chunks(collection_id, user_message, total_k=12)
+    # ขั้นที่ 1: Agent วิเคราะห์คำถามและวางแผน
+    yield {"type": "status", "content": "กำลังวิเคราะห์คำถามและวางแผนการค้นหา..."}
+    plan = await _plan_agent_retrieval(
+        user_message=user_message,
+        chat_history=chat_history,
+        records=records,
+        has_wiki=bool(combined_wiki),
+    )
+    strategy: str = plan["strategy"]
+    sub_queries: list[str] = plan["sub_queries"]
+
+    chunks: list[dict] = []
+
+    # ขั้นที่ 2: ค้นหาตามแผน (Multi-Query Retrieval)
+    if strategy != "direct" and records:
+        yield {
+            "type": "status",
+            "content": f"กำลังค้นหาข้อมูล ({len(sub_queries)} ประเด็น) จาก {len(records)} ไฟล์...",
+        }
+        per_query_k = max(6, 12 // max(1, len(sub_queries)))
+        for sq in sub_queries:
+            found = _retrieve_cross_file_chunks(collection_id, sq, total_k=per_query_k)
+            chunks = _merge_unique_chunks(chunks, found, max_items=14)
+
+        # ขั้นที่ 3: Agent ตรวจสอบคุณภาพข้อมูล และค้นซ้ำด้วยคำค้นใหม่หากข้อมูลยังไม่พอ
+        yield {"type": "status", "content": "กำลังตรวจสอบความครบถ้วนของหลักฐาน..."}
+        sufficient, rewritten_query = await _grade_and_rewrite_query(
+            user_message=user_message,
+            retrieved_chunks=chunks,
+            used_queries=sub_queries,
+        )
+        if not sufficient and rewritten_query:
+            yield {
+                "type": "status",
+                "content": f"ข้อมูลยังไม่ครบ กำลังค้นเพิ่มเติม: \"{rewritten_query}\"...",
+            }
+            extra_chunks = _retrieve_cross_file_chunks(collection_id, rewritten_query, total_k=8)
+            chunks = _merge_unique_chunks(chunks, extra_chunks, max_items=16)
+
+    # ขั้นที่ 4: จัดเตรียม Citations และ Context สำหรับตอบ
+    yield {"type": "status", "content": "กำลังเรียบเรียงคำตอบพร้อมแหล่งอ้างอิง..."}
 
     citations_map: dict[tuple[str, int], dict] = {}
     context_blocks: list[str] = []
@@ -268,7 +463,6 @@ async def stream_rag_answer(
         yield {"type": "error", "detail": "ยังไม่ได้ตั้งค่า OPENROUTER_API_KEY ใน backend/.env"}
         return
 
-    # สร้างสารบัญไฟล์ทั้งหมดในโปรเจคส่งให้ AI รู้จำนวนและชื่อไฟล์เสมอ
     if records:
         file_list_lines = "\n".join(
             f"{i}. {r['filename']}" for i, r in enumerate(records, start=1)
@@ -279,6 +473,13 @@ async def stream_rag_answer(
     else:
         project_inventory = "รายการเอกสารทั้งหมดในโปรเจคนี้: 0 ไฟล์ (ยังไม่มีการอัปโหลดเอกสาร)"
 
+    wiki_section = ""
+    if strategy == "wiki_and_vector" and combined_wiki:
+        wiki_section = (
+            "สรุปภาพรวมทั้งโปรเจคที่สังเคราะห์ไว้ (LLM Wiki):\n"
+            f"{combined_wiki[:7000]}\n\n---\n\n"
+        )
+
     combined_context = (
         "\n\n---\n\n".join(context_blocks)
         if context_blocks
@@ -286,12 +487,13 @@ async def stream_rag_answer(
     )
 
     system_prompt = (
-        "คุณคือ Textspace AI ผู้ช่วยวิเคราะห์เอกสารอัจฉริยะ "
+        "คุณคือ Textspace AI ผู้ช่วยวิเคราะห์เอกสารอัจฉริยะ (โหมด Agentic RAG) "
         "จงตอบคำถามโดยประมวลผลข้อมูลจาก 'ทุกไฟล์ในโปรเจคนี้รวมกัน' "
         "หากผู้ใช้ถามเกี่ยวกับจำนวนไฟล์ รายชื่อไฟล์ หรือบทที่มีในโปรเจค ให้ตอบจาก 'รายการเอกสารทั้งหมดในโปรเจคนี้' ด้านล่างได้ทันที "
         "และหากถามเนื้อหาเชิงลึก ให้สังเคราะห์ข้อมูลจากทุกไฟล์มาพิจารณาร่วมกัน พร้อมระบุชื่อไฟล์กับเลขหน้าอ้างอิงให้ชัดเจน\n\n"
         f"{project_inventory}\n\n"
-        f"เนื้อหาที่ดึงมาจากเอกสารในโปรเจค:\n{combined_context}"
+        f"{wiki_section}"
+        f"เนื้อหาละเอียดที่ดึงมาจากเอกสารในโปรเจค:\n{combined_context}"
     )
 
     messages_payload = [{"role": "system", "content": system_prompt}]
@@ -304,7 +506,7 @@ async def stream_rag_answer(
         "Content-Type": "application/json",
     }
     body = {
-        "model": model_name or "openai/gpt-4o-mini",
+        "model": model_name or AGENT_FAST_MODEL,
         "messages": messages_payload,
         "stream": True,
         "temperature": 0.2,
